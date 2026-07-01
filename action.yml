@@ -1,0 +1,115 @@
+name: Checkly
+description: Run Checkly CLI checks from GitHub Actions.
+author: Checkly
+
+branding:
+  icon: activity
+  color: green
+
+inputs:
+  command:
+    description: CLI command to run. Use "test" for local constructs or "trigger" for deployed checks.
+    required: false
+    default: test
+  cli-version:
+    description: Checkly CLI npm version to run.
+    required: false
+    default: latest
+  working-directory:
+    description: Directory where the Checkly CLI command should run.
+    required: false
+    default: .
+  tags:
+    description: Tags selector. Use one line per --tags filter, e.g. "production,webapp".
+    required: false
+  grep:
+    description: Only for command=test. Run checks whose name matches this regular expression.
+    required: false
+  check-id:
+    description: Only for command=trigger. Comma-separated deployed check IDs to trigger.
+    required: false
+  files:
+    description: Only for command=test. File-name patterns passed as positional arguments, one per line.
+    required: false
+  config:
+    description: Checkly CLI config file path.
+    required: false
+  location:
+    description: Public location to run checks from.
+    required: false
+  private-location:
+    description: Private location slug to run checks from.
+    required: false
+  env:
+    description: Environment variables for the Checkly run, one KEY=VALUE per line.
+    required: false
+  env-file:
+    description: Dotenv file path to pass to the Checkly CLI.
+    required: false
+  test-session-name:
+    description: Name to use when storing results as a Checkly test session.
+    required: false
+  timeout:
+    description: Timeout in seconds to wait for checks to complete. Mostly useful when detach is disabled in future versions.
+    required: false
+  retries:
+    description: Number of times to retry a failing run.
+    required: false
+  refresh-cache:
+    description: Force a fresh dependency install and update the cached version.
+    required: false
+    default: "false"
+  update-snapshots:
+    description: Only for command=test. Update snapshots using the actual result of this run.
+    required: false
+    default: "false"
+  verify-runtime-dependencies:
+    description: Only for command=test. Set to false to pass --no-verify-runtime-dependencies.
+    required: false
+  fail-on-no-matching:
+    description: Only for command=trigger. Set to false to pass --no-fail-on-no-matching.
+    required: false
+  verbose:
+    description: Set to true or false to pass --verbose or --no-verbose.
+    required: false
+  github-report:
+    description: Best-effort GitHub Check reporting when the Checkly GitHub App is connected.
+    required: false
+    default: "true"
+
+outputs:
+  test-session-id:
+    description: The Checkly test session ID, when detected from CLI output.
+    value: ${{ steps.run-checkly.outputs.test-session-id }}
+  test-session-url:
+    description: The Checkly test session URL, when detected from CLI output.
+    value: ${{ steps.run-checkly.outputs.test-session-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: run-checkly
+      shell: bash
+      run: ${{ github.action_path }}/scripts/run.sh
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_CLI_VERSION: ${{ inputs.cli-version }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_GREP: ${{ inputs.grep }}
+        INPUT_CHECK_ID: ${{ inputs.check-id }}
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_LOCATION: ${{ inputs.location }}
+        INPUT_PRIVATE_LOCATION: ${{ inputs.private-location }}
+        INPUT_ENV: ${{ inputs.env }}
+        INPUT_ENV_FILE: ${{ inputs.env-file }}
+        INPUT_TEST_SESSION_NAME: ${{ inputs.test-session-name }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_RETRIES: ${{ inputs.retries }}
+        INPUT_REFRESH_CACHE: ${{ inputs.refresh-cache }}
+        INPUT_UPDATE_SNAPSHOTS: ${{ inputs.update-snapshots }}
+        INPUT_VERIFY_RUNTIME_DEPENDENCIES: ${{ inputs.verify-runtime-dependencies }}
+        INPUT_FAIL_ON_NO_MATCHING: ${{ inputs.fail-on-no-matching }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+        INPUT_GITHUB_REPORT: ${{ inputs.github-report }}
