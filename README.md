@@ -26,6 +26,7 @@ jobs:
         with:
           command: test
           cli-version: latest
+          install-command: npm ci
           tags: production,webapp
           grep: checkout
         env:
@@ -67,6 +68,7 @@ GitHub Actions step summary.
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
 | `cli-version` | Checkly CLI npm version. Defaults to `latest`. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
+| `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |
 | `grep` | `test` only. Check name regular expression. |
 | `check-id` | `trigger` only. Comma-separated deployed check IDs. |

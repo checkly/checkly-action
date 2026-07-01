@@ -19,6 +19,9 @@ inputs:
     description: Directory where the Checkly CLI command should run.
     required: false
     default: .
+  install-command:
+    description: Optional dependency installation command to run before the Checkly CLI command.
+    required: false
   tags:
     description: Tags selector. Use one line per --tags filter, e.g. "production,webapp".
     required: false
@@ -95,6 +98,7 @@ runs:
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_CLI_VERSION: ${{ inputs.cli-version }}
         INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_INSTALL_COMMAND: ${{ inputs.install-command }}
         INPUT_TAGS: ${{ inputs.tags }}
         INPUT_GREP: ${{ inputs.grep }}
         INPUT_CHECK_ID: ${{ inputs.check-id }}

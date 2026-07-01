@@ -25,11 +25,13 @@ test_command_output="$(
   INPUT_GREP='checkout' \
   INPUT_FILES=$'checks/**/*.check.ts\nsmoke.check.ts' \
   INPUT_CONFIG='checkly.config.ts' \
+  INPUT_INSTALL_COMMAND='npm ci' \
   INPUT_REFRESH_CACHE=true \
   INPUT_UPDATE_SNAPSHOTS=true \
   run_dry
 )"
 
+assert_contains "$test_command_output" "Install command: npm ci"
 assert_contains "$test_command_output" "checkly@1.2.3 test --detach"
 assert_contains "$test_command_output" "--tags production\\,webapp --tags production\\,backend"
 assert_contains "$test_command_output" "--grep checkout"

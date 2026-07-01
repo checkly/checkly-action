@@ -97,6 +97,7 @@ append_summary() {
 command_name="$(trim "${INPUT_COMMAND:-test}")"
 cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
+install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 
 case "$command_name" in
   test|trigger) ;;
@@ -161,6 +162,9 @@ else
 fi
 
 if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "true" ]]; then
+  if [[ -n "$install_command" ]]; then
+    printf 'Install command: %s\n' "$install_command"
+  fi
   printf 'Command: '
   printf '%q ' "${checkly_command[@]}"
   printf '\n'
@@ -168,6 +172,11 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
 fi
 
 cd "$working_directory"
+
+if [[ -n "$install_command" ]]; then
+  echo "Running install command: ${install_command}"
+  bash -euo pipefail -c "$install_command"
+fi
 
 output_file="$(mktemp)"
 set +e
