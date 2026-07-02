@@ -53,16 +53,32 @@ assert_contains "$trigger_command_output" "--tags production"
 assert_contains "$trigger_command_output" "--check-id abc\\,def"
 assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
 
+github_event_path="$(mktemp)"
+trap 'rm -f "$github_event_path"' EXIT
+cat > "$github_event_path" <<'JSON'
+{
+  "pull_request": {
+    "head": {
+      "sha": "head123def456",
+      "repo": {
+        "full_name": "checkly/playwright-reporter-demo"
+      }
+    }
+  }
+}
+JSON
+
 github_report_output="$(
   INPUT_COMMAND=test \
   INPUT_GITHUB_REPORT=true \
   GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
-  GITHUB_SHA=abc123def456 \
+  GITHUB_SHA=merge123def456 \
   GITHUB_RUN_ID=123456 \
   GITHUB_RUN_ATTEMPT=2 \
   GITHUB_WORKFLOW=Checkly \
   GITHUB_JOB=validate \
   GITHUB_EVENT_NAME=pull_request \
+  GITHUB_EVENT_PATH="$github_event_path" \
   GITHUB_REF=refs/pull/4/merge \
   GITHUB_REF_NAME=4/merge \
   GITHUB_HEAD_REF=herve/test-checkly-action \
@@ -71,7 +87,7 @@ github_report_output="$(
   run_dry
 )"
 
-assert_contains "$github_report_output" "GitHub report: enabled for checkly/playwright-reporter-demo@abc123def456"
+assert_contains "$github_report_output" "GitHub report: enabled for checkly/playwright-reporter-demo@head123def456"
 
 github_report_disabled_output="$(
   INPUT_COMMAND=test \

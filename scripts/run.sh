@@ -94,6 +94,62 @@ append_summary() {
   fi
 }
 
+github_event_value() {
+  local path="$1"
+  local event_path="${GITHUB_EVENT_PATH:-}"
+  if [[ -z "$event_path" || ! -f "$event_path" ]]; then
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+
+  node - "$path" <<'NODE'
+const fs = require('fs')
+
+const eventPath = process.env.GITHUB_EVENT_PATH
+const path = process.argv[2].split('.')
+
+try {
+  let value = JSON.parse(fs.readFileSync(eventPath, 'utf8'))
+  for (const segment of path) {
+    if (!value || typeof value !== 'object' || !(segment in value)) {
+      process.exit(0)
+    }
+    value = value[segment]
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    process.stdout.write(value)
+  }
+} catch (_) {
+  process.exit(0)
+}
+NODE
+}
+
+is_pull_request_event() {
+  case "${GITHUB_EVENT_NAME:-}" in
+    pull_request|pull_request_target) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_github_repository() {
+  local repository=""
+  if is_pull_request_event; then
+    repository="$(github_event_value "pull_request.head.repo.full_name")"
+  fi
+  printf '%s' "${repository:-${GITHUB_REPOSITORY:-}}"
+}
+
+resolve_github_sha() {
+  local sha=""
+  if is_pull_request_event; then
+    sha="$(github_event_value "pull_request.head.sha")"
+  fi
+  printf '%s' "${sha:-${GITHUB_SHA:-}}"
+}
+
 clear_github_report_env() {
   unset CHECKLY_GITHUB_REPORT
   unset CHECKLY_GITHUB_REPOSITORY
@@ -110,12 +166,16 @@ clear_github_report_env() {
 }
 
 configure_generic_repo_env() {
-  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
-    export CHECKLY_REPO_URL="${CHECKLY_REPO_URL:-${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}}"
+  local repository
+  repository="$(resolve_github_repository)"
+  if [[ -n "$repository" ]]; then
+    export CHECKLY_REPO_URL="${CHECKLY_REPO_URL:-${GITHUB_SERVER_URL:-https://github.com}/${repository}}"
   fi
 
-  if [[ -n "${GITHUB_SHA:-}" ]]; then
-    export CHECKLY_REPO_SHA="${CHECKLY_REPO_SHA:-$GITHUB_SHA}"
+  local sha
+  sha="$(resolve_github_sha)"
+  if [[ -n "$sha" ]]; then
+    export CHECKLY_REPO_SHA="${CHECKLY_REPO_SHA:-$sha}"
   fi
 
   local branch_name="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
@@ -137,12 +197,16 @@ configure_github_report() {
 
   export CHECKLY_GITHUB_REPORT=true
 
-  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
-    export CHECKLY_GITHUB_REPOSITORY="$GITHUB_REPOSITORY"
+  local repository
+  repository="$(resolve_github_repository)"
+  if [[ -n "$repository" ]]; then
+    export CHECKLY_GITHUB_REPOSITORY="$repository"
   fi
 
-  if [[ -n "${GITHUB_SHA:-}" ]]; then
-    export CHECKLY_GITHUB_SHA="$GITHUB_SHA"
+  local sha
+  sha="$(resolve_github_sha)"
+  if [[ -n "$sha" ]]; then
+    export CHECKLY_GITHUB_SHA="$sha"
   fi
 
   [[ -n "${GITHUB_RUN_ID:-}" ]] && export CHECKLY_GITHUB_RUN_ID="$GITHUB_RUN_ID"
