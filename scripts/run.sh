@@ -94,6 +94,70 @@ append_summary() {
   fi
 }
 
+clear_github_report_env() {
+  unset CHECKLY_GITHUB_REPORT
+  unset CHECKLY_GITHUB_REPOSITORY
+  unset CHECKLY_GITHUB_SHA
+  unset CHECKLY_GITHUB_RUN_ID
+  unset CHECKLY_GITHUB_RUN_ATTEMPT
+  unset CHECKLY_GITHUB_WORKFLOW
+  unset CHECKLY_GITHUB_JOB
+  unset CHECKLY_GITHUB_EVENT_NAME
+  unset CHECKLY_GITHUB_REF
+  unset CHECKLY_GITHUB_HEAD_REF
+  unset CHECKLY_GITHUB_BASE_REF
+  unset CHECKLY_GITHUB_SERVER_URL
+}
+
+configure_generic_repo_env() {
+  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    export CHECKLY_REPO_URL="${CHECKLY_REPO_URL:-${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}}"
+  fi
+
+  if [[ -n "${GITHUB_SHA:-}" ]]; then
+    export CHECKLY_REPO_SHA="${CHECKLY_REPO_SHA:-$GITHUB_SHA}"
+  fi
+
+  local branch_name="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+  if [[ -n "$branch_name" ]]; then
+    export CHECKLY_REPO_BRANCH="${CHECKLY_REPO_BRANCH:-$branch_name}"
+  fi
+}
+
+configure_github_report() {
+  local value="${INPUT_GITHUB_REPORT:-true}"
+  if falsey "$value"; then
+    clear_github_report_env
+    return
+  fi
+  if ! truthy "$value"; then
+    echo "::error::Expected boolean input for github-report, got '${value}'." >&2
+    exit 1
+  fi
+
+  export CHECKLY_GITHUB_REPORT=true
+
+  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    export CHECKLY_GITHUB_REPOSITORY="$GITHUB_REPOSITORY"
+  fi
+
+  if [[ -n "${GITHUB_SHA:-}" ]]; then
+    export CHECKLY_GITHUB_SHA="$GITHUB_SHA"
+  fi
+
+  [[ -n "${GITHUB_RUN_ID:-}" ]] && export CHECKLY_GITHUB_RUN_ID="$GITHUB_RUN_ID"
+  [[ -n "${GITHUB_RUN_ATTEMPT:-}" ]] && export CHECKLY_GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"
+  [[ -n "${GITHUB_WORKFLOW:-}" ]] && export CHECKLY_GITHUB_WORKFLOW="$GITHUB_WORKFLOW"
+  [[ -n "${GITHUB_JOB:-}" ]] && export CHECKLY_GITHUB_JOB="$GITHUB_JOB"
+  [[ -n "${GITHUB_EVENT_NAME:-}" ]] && export CHECKLY_GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME"
+  [[ -n "${GITHUB_REF:-}" ]] && export CHECKLY_GITHUB_REF="$GITHUB_REF"
+  [[ -n "${GITHUB_HEAD_REF:-}" ]] && export CHECKLY_GITHUB_HEAD_REF="$GITHUB_HEAD_REF"
+  [[ -n "${GITHUB_BASE_REF:-}" ]] && export CHECKLY_GITHUB_BASE_REF="$GITHUB_BASE_REF"
+  [[ -n "${GITHUB_SERVER_URL:-}" ]] && export CHECKLY_GITHUB_SERVER_URL="$GITHUB_SERVER_URL"
+
+  return 0
+}
+
 command_name="$(trim "${INPUT_COMMAND:-test}")"
 cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
@@ -161,6 +225,9 @@ else
   add_optional_boolean_flag "--fail-on-no-matching" "--no-fail-on-no-matching" "${INPUT_FAIL_ON_NO_MATCHING:-}"
 fi
 
+configure_generic_repo_env
+configure_github_report
+
 if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "true" ]]; then
   if [[ -n "$install_command" ]]; then
     printf 'Install command: %s\n' "$install_command"
@@ -168,6 +235,15 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
   printf 'Command: '
   printf '%q ' "${checkly_command[@]}"
   printf '\n'
+  if [[ "${CHECKLY_GITHUB_REPORT:-}" == "true" ]]; then
+    printf 'GitHub report: enabled'
+    if [[ -n "${CHECKLY_GITHUB_REPOSITORY:-}" && -n "${CHECKLY_GITHUB_SHA:-}" ]]; then
+      printf ' for %s@%s' "$CHECKLY_GITHUB_REPOSITORY" "$CHECKLY_GITHUB_SHA"
+    fi
+    printf '\n'
+  else
+    printf 'GitHub report: disabled\n'
+  fi
   exit 0
 fi
 

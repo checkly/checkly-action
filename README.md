@@ -61,6 +61,13 @@ The action always starts detached runs. The Checkly CLI prints a test session ID
 and session URL; this action exposes them as outputs and writes them to the
 GitHub Actions step summary.
 
+When `github-report` is enabled, the action also passes GitHub Actions metadata
+to the Checkly CLI. If the Checkly GitHub App is connected to the repository,
+Checkly can use that metadata to post a GitHub Check that links back to the test
+session and updates when the session finishes. If the app is not connected, the
+run still succeeds or fails normally and the session link in the workflow output
+remains the fallback.
+
 ## Inputs
 
 | Input | Description |

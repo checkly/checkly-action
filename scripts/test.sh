@@ -37,6 +37,7 @@ assert_contains "$test_command_output" "--tags production\\,webapp --tags produc
 assert_contains "$test_command_output" "--grep checkout"
 assert_contains "$test_command_output" "--update-snapshots"
 assert_contains "$test_command_output" "checks/\\*\\*/\\*.check.ts smoke.check.ts"
+assert_contains "$test_command_output" "GitHub report: enabled"
 
 trigger_command_output="$(
   INPUT_COMMAND=trigger \
@@ -51,5 +52,38 @@ assert_contains "$trigger_command_output" "checkly@latest trigger --detach"
 assert_contains "$trigger_command_output" "--tags production"
 assert_contains "$trigger_command_output" "--check-id abc\\,def"
 assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
+
+github_report_output="$(
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_REPORT=true \
+  GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
+  GITHUB_SHA=abc123def456 \
+  GITHUB_RUN_ID=123456 \
+  GITHUB_RUN_ATTEMPT=2 \
+  GITHUB_WORKFLOW=Checkly \
+  GITHUB_JOB=validate \
+  GITHUB_EVENT_NAME=pull_request \
+  GITHUB_REF=refs/pull/4/merge \
+  GITHUB_REF_NAME=4/merge \
+  GITHUB_HEAD_REF=herve/test-checkly-action \
+  GITHUB_BASE_REF=main \
+  GITHUB_SERVER_URL=https://github.com \
+  run_dry
+)"
+
+assert_contains "$github_report_output" "GitHub report: enabled for checkly/playwright-reporter-demo@abc123def456"
+
+github_report_disabled_output="$(
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_REPORT=false \
+  CHECKLY_GITHUB_REPORT=true \
+  CHECKLY_GITHUB_REPOSITORY=spoofed/repository \
+  CHECKLY_GITHUB_SHA=spoofed-sha \
+  GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
+  GITHUB_SHA=abc123def456 \
+  run_dry
+)"
+
+assert_contains "$github_report_disabled_output" "GitHub report: disabled"
 
 echo "All local action tests passed."
