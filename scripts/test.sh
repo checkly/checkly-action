@@ -18,9 +18,26 @@ assert_contains() {
   fi
 }
 
+assert_fails_with() {
+  local expected="$1"
+  shift
+  local output
+  set +e
+  output="$("$@" 2>&1)"
+  local status="$?"
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "Expected command to fail." >&2
+    echo "Actual output:" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  assert_contains "$output" "$expected"
+}
+
 test_command_output="$(
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=1.2.3 \
+  INPUT_CLI_VERSION=8.12.0 \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   INPUT_TAGS=$'production,webapp\nproduction,backend' \
   INPUT_GREP='checkout' \
@@ -33,7 +50,7 @@ test_command_output="$(
 )"
 
 assert_contains "$test_command_output" "Install command: npm ci"
-assert_contains "$test_command_output" "checkly@1.2.3 test --detach"
+assert_contains "$test_command_output" "checkly@8.12.0 test --detach"
 assert_contains "$test_command_output" "--tags production\\,webapp --tags production\\,backend"
 assert_contains "$test_command_output" "--grep checkout"
 assert_contains "$test_command_output" "--update-snapshots"
@@ -57,15 +74,33 @@ assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
 
 fallback_command_output="$(
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=1.2.3 \
+  INPUT_CLI_VERSION=8.12.0 \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=false \
   CHECKLY_ACTION_GITHUB_REPORT_REASON=github_app_not_connected \
   GITHUB_ACTIONS=true \
   run_dry
 )"
 
-assert_contains "$fallback_command_output" "checkly@1.2.3 test --reporter=github"
+assert_contains "$fallback_command_output" "checkly@8.12.0 test --reporter=github"
 assert_contains "$fallback_command_output" "GitHub report: unavailable (github_app_not_connected), waiting for CLI result"
+
+assert_fails_with "github-report requires Checkly CLI 8.12.0 or newer" env \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.11.9 \
+  INPUT_GITHUB_REPORT=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
+prerelease_version_output="$(
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=0.0.0-canary.58c867e \
+  INPUT_GITHUB_REPORT=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  run_dry
+)"
+
+assert_contains "$prerelease_version_output" "checkly@0.0.0-canary.58c867e test --detach"
 
 github_event_path="$(mktemp)"
 trap 'rm -f "$github_event_path"' EXIT
@@ -106,6 +141,7 @@ assert_contains "$github_report_output" "GitHub report: detached writeback enabl
 
 github_report_disabled_output="$(
   INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.11.9 \
   INPUT_GITHUB_REPORT=false \
   CHECKLY_GITHUB_REPORT=true \
   CHECKLY_GITHUB_REPOSITORY=spoofed/repository \
@@ -116,7 +152,7 @@ github_report_disabled_output="$(
 )"
 
 assert_contains "$github_report_disabled_output" "GitHub report: disabled"
-assert_contains "$github_report_disabled_output" "checkly@latest test --reporter=github"
+assert_contains "$github_report_disabled_output" "checkly@8.11.9 test --reporter=github"
 
 deployment_event_path="$(mktemp)"
 trap 'rm -f "$github_event_path" "$deployment_event_path"' EXIT

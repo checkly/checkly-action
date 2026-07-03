@@ -77,7 +77,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Defaults to `latest`. |
+| `cli-version` | Checkly CLI npm version. Defaults to `latest`. When `github-report` is enabled, pinned stable versions must be `8.12.0` or newer. Dist-tags, canaries, and prereleases are allowed. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |

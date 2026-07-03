@@ -79,6 +79,32 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
+validate_cli_version_for_github_report() {
+  local version
+  version="$(trim "${1:-}")"
+  if [[ -z "$version" ]]; then
+    return
+  fi
+
+  # Only reject exact pinned stable semver below 8.12.0. Dist-tags, ranges,
+  # canaries, and prereleases are allowed because they may point at compatible
+  # builds before a stable release exists.
+  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    local major="${BASH_REMATCH[1]}"
+    local minor="${BASH_REMATCH[2]}"
+    local patch="${BASH_REMATCH[3]}"
+
+    if (( major < 8 || (major == 8 && minor < 12) )); then
+      echo "::error::github-report requires Checkly CLI 8.12.0 or newer when cli-version is pinned. Use cli-version: latest, a canary/prerelease, or a version >= 8.12.0. Got '${version}'." >&2
+      exit 1
+    fi
+
+    # Keep shellcheck/linters happy that patch is intentionally parsed as part
+    # of the exact semver guard even though the minimum is major/minor aligned.
+    : "$patch"
+  fi
+}
+
 write_output() {
   local name="$1"
   local value="$2"
@@ -384,6 +410,7 @@ if falsey "${INPUT_GITHUB_REPORT:-true}"; then
   clear_github_report_env
 elif truthy "${INPUT_GITHUB_REPORT:-true}"; then
   github_report_requested=true
+  validate_cli_version_for_github_report "$cli_version"
   configure_github_report
   preflight_result="$(github_report_preflight)"
   IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
