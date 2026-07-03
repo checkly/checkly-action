@@ -184,6 +184,14 @@ configure_generic_repo_env() {
   fi
 }
 
+configure_deployment_environment_url() {
+  local deployment_url
+  deployment_url="$(github_event_value "deployment_status.environment_url")"
+  if [[ -n "$deployment_url" && -z "${ENVIRONMENT_URL:-}" ]]; then
+    export ENVIRONMENT_URL="$deployment_url"
+  fi
+}
+
 configure_github_report() {
   local value="${INPUT_GITHUB_REPORT:-true}"
   if falsey "$value"; then
@@ -220,6 +228,104 @@ configure_github_report() {
   [[ -n "${GITHUB_SERVER_URL:-}" ]] && export CHECKLY_GITHUB_SERVER_URL="$GITHUB_SERVER_URL"
 
   return 0
+}
+
+resolve_checkly_api_url() {
+  if [[ -n "${CHECKLY_API_URL:-}" ]]; then
+    printf '%s' "${CHECKLY_API_URL%/}"
+    return
+  fi
+
+  case "${CHECKLY_ENV:-production}" in
+    local) printf '%s' "http://127.0.0.1:3000" ;;
+    development) printf '%s' "https://api-dev.checklyhq.com" ;;
+    staging) printf '%s' "https://api-test.checklyhq.com" ;;
+    *) printf '%s' "https://api.checklyhq.com" ;;
+  esac
+}
+
+github_report_preflight() {
+  if [[ -n "${CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE:-}" ]]; then
+    if truthy "${CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE}"; then
+      printf 'true\tavailable\n'
+    else
+      printf 'false\t%s\n' "${CHECKLY_ACTION_GITHUB_REPORT_REASON:-unavailable}"
+    fi
+    return
+  fi
+
+  if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "true" ]]; then
+    printf 'false\tdry_run\n'
+    return
+  fi
+
+  if [[ -z "${CHECKLY_API_KEY:-}" || -z "${CHECKLY_ACCOUNT_ID:-}" ]]; then
+    printf 'false\tmissing_credentials\n'
+    return
+  fi
+
+  if [[ -z "${CHECKLY_GITHUB_REPOSITORY:-}" || -z "${CHECKLY_GITHUB_SHA:-}" ]]; then
+    printf 'false\tmissing_metadata\n'
+    return
+  fi
+
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'false\tnode_unavailable\n'
+    return
+  fi
+
+  CHECKLY_PREFLIGHT_API_URL="$(resolve_checkly_api_url)" \
+  CHECKLY_PREFLIGHT_CLI_VERSION="$cli_version" \
+  node <<'NODE'
+const apiUrl = process.env.CHECKLY_PREFLIGHT_API_URL
+const accountId = process.env.CHECKLY_ACCOUNT_ID
+const apiKey = process.env.CHECKLY_API_KEY
+
+const payload = {
+  repository: process.env.CHECKLY_GITHUB_REPOSITORY,
+  sha: process.env.CHECKLY_GITHUB_SHA,
+  runId: process.env.CHECKLY_GITHUB_RUN_ID,
+  runAttempt: process.env.CHECKLY_GITHUB_RUN_ATTEMPT,
+  workflow: process.env.CHECKLY_GITHUB_WORKFLOW,
+  job: process.env.CHECKLY_GITHUB_JOB,
+  eventName: process.env.CHECKLY_GITHUB_EVENT_NAME,
+  ref: process.env.CHECKLY_GITHUB_REF,
+  headRef: process.env.CHECKLY_GITHUB_HEAD_REF,
+  baseRef: process.env.CHECKLY_GITHUB_BASE_REF,
+  serverUrl: process.env.CHECKLY_GITHUB_SERVER_URL,
+}
+
+async function main() {
+  try {
+    const response = await fetch(`${apiUrl}/next/test-sessions/github-checks/preflight`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'user-agent': 'checkly-action',
+        'x-checkly-account': accountId,
+        'x-checkly-source': 'CLI',
+        'x-checkly-operator': 'github-actions',
+        'x-checkly-ci-name': 'GitHub Actions',
+        'x-checkly-cli-version': process.env.CHECKLY_PREFLIGHT_CLI_VERSION ?? '',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      process.stdout.write(`false\tpreflight_http_${response.status}\n`)
+      return
+    }
+
+    const result = await response.json()
+    process.stdout.write(`${result.available ? 'true' : 'false'}\t${result.reason || 'unavailable'}\n`)
+  } catch (_) {
+    process.stdout.write('false\tpreflight_failed\n')
+  }
+}
+
+main()
+NODE
 }
 
 command_name="$(trim "${INPUT_COMMAND:-test}")"
@@ -265,7 +371,42 @@ if [[ "$command_name" == "test" && -n "$(trim "${INPUT_FAIL_ON_NO_MATCHING:-}")"
   exit 1
 fi
 
-checkly_command=(npx --yes "checkly@${cli_version}" "$command_name" --detach)
+configure_generic_repo_env
+configure_deployment_environment_url
+
+github_report_requested=false
+github_report_available=false
+github_report_reason="disabled"
+detach_run=false
+github_reporter_run=true
+
+if falsey "${INPUT_GITHUB_REPORT:-true}"; then
+  clear_github_report_env
+elif truthy "${INPUT_GITHUB_REPORT:-true}"; then
+  github_report_requested=true
+  configure_github_report
+  preflight_result="$(github_report_preflight)"
+  IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
+  if [[ "$github_report_available" == "true" ]]; then
+    detach_run=true
+    github_reporter_run=false
+  else
+    clear_github_report_env
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+      echo "::warning::Checkly GitHub App reporting is unavailable (${github_report_reason}). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead."
+    fi
+  fi
+else
+  echo "::error::Expected boolean input for github-report, got '${INPUT_GITHUB_REPORT}'." >&2
+  exit 1
+fi
+
+checkly_command=(npx --yes "checkly@${cli_version}" "$command_name")
+if [[ "$detach_run" == "true" ]]; then
+  checkly_command+=("--detach")
+elif [[ "$github_reporter_run" == "true" ]]; then
+  checkly_command+=("--reporter=github")
+fi
 
 add_repeated_flag_from_lines "--tags" "${INPUT_TAGS:-}"
 add_flag_value "--config" "${INPUT_CONFIG:-}"
@@ -289,22 +430,24 @@ else
   add_optional_boolean_flag "--fail-on-no-matching" "--no-fail-on-no-matching" "${INPUT_FAIL_ON_NO_MATCHING:-}"
 fi
 
-configure_generic_repo_env
-configure_github_report
-
 if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "true" ]]; then
   if [[ -n "$install_command" ]]; then
     printf 'Install command: %s\n' "$install_command"
   fi
+  if [[ -n "${ENVIRONMENT_URL:-}" ]]; then
+    printf 'Environment URL: %s\n' "$ENVIRONMENT_URL"
+  fi
   printf 'Command: '
   printf '%q ' "${checkly_command[@]}"
   printf '\n'
-  if [[ "${CHECKLY_GITHUB_REPORT:-}" == "true" ]]; then
-    printf 'GitHub report: enabled'
+  if [[ "$github_report_requested" == "true" && "$github_report_available" == "true" ]]; then
+    printf 'GitHub report: detached writeback enabled'
     if [[ -n "${CHECKLY_GITHUB_REPOSITORY:-}" && -n "${CHECKLY_GITHUB_SHA:-}" ]]; then
       printf ' for %s@%s' "$CHECKLY_GITHUB_REPOSITORY" "$CHECKLY_GITHUB_SHA"
     fi
     printf '\n'
+  elif [[ "$github_report_requested" == "true" ]]; then
+    printf 'GitHub report: unavailable (%s), waiting for CLI result\n' "$github_report_reason"
   else
     printf 'GitHub report: disabled\n'
   fi
@@ -338,6 +481,12 @@ fi
 
 append_summary "## Checkly"
 append_summary ""
+
+if [[ -f checkly-github-report.md && -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  cat checkly-github-report.md >> "$GITHUB_STEP_SUMMARY"
+  append_summary ""
+fi
+
 if [[ -n "$test_session_id" ]]; then
   append_summary "- Test session ID: \`${test_session_id}\`"
 fi
@@ -348,9 +497,12 @@ if [[ -z "$test_session_id" && -z "$test_session_url" ]]; then
   append_summary "- The Checkly CLI did not print a detached test session reference."
 fi
 
-if truthy "${INPUT_GITHUB_REPORT:-true}"; then
+if [[ "$github_report_requested" == "true" && "$github_report_available" == "true" ]]; then
   append_summary ""
-  append_summary "GitHub Check reporting is best-effort. If the Checkly GitHub App is not connected to this repository, use the test session link above."
+  append_summary "GitHub Check reporting is enabled for this run."
+elif [[ "$github_report_requested" == "true" ]]; then
+  append_summary ""
+  append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job waited for the Checkly run to finish. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check."
 fi
 
 rm -f "$output_file"

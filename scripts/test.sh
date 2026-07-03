@@ -21,6 +21,7 @@ assert_contains() {
 test_command_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=1.2.3 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   INPUT_TAGS=$'production,webapp\nproduction,backend' \
   INPUT_GREP='checkout' \
   INPUT_FILES=$'checks/**/*.check.ts\nsmoke.check.ts' \
@@ -37,11 +38,12 @@ assert_contains "$test_command_output" "--tags production\\,webapp --tags produc
 assert_contains "$test_command_output" "--grep checkout"
 assert_contains "$test_command_output" "--update-snapshots"
 assert_contains "$test_command_output" "checks/\\*\\*/\\*.check.ts smoke.check.ts"
-assert_contains "$test_command_output" "GitHub report: enabled"
+assert_contains "$test_command_output" "GitHub report: detached writeback enabled"
 
 trigger_command_output="$(
   INPUT_COMMAND=trigger \
   INPUT_CLI_VERSION=latest \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   INPUT_TAGS='production' \
   INPUT_CHECK_ID='abc,def' \
   INPUT_FAIL_ON_NO_MATCHING=false \
@@ -52,6 +54,18 @@ assert_contains "$trigger_command_output" "checkly@latest trigger --detach"
 assert_contains "$trigger_command_output" "--tags production"
 assert_contains "$trigger_command_output" "--check-id abc\\,def"
 assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
+
+fallback_command_output="$(
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=1.2.3 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=false \
+  CHECKLY_ACTION_GITHUB_REPORT_REASON=github_app_not_connected \
+  GITHUB_ACTIONS=true \
+  run_dry
+)"
+
+assert_contains "$fallback_command_output" "checkly@1.2.3 test --reporter=github"
+assert_contains "$fallback_command_output" "GitHub report: unavailable (github_app_not_connected), waiting for CLI result"
 
 github_event_path="$(mktemp)"
 trap 'rm -f "$github_event_path"' EXIT
@@ -71,6 +85,7 @@ JSON
 github_report_output="$(
   INPUT_COMMAND=test \
   INPUT_GITHUB_REPORT=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
   GITHUB_SHA=merge123def456 \
   GITHUB_RUN_ID=123456 \
@@ -87,7 +102,7 @@ github_report_output="$(
   run_dry
 )"
 
-assert_contains "$github_report_output" "GitHub report: enabled for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "GitHub report: detached writeback enabled for checkly/playwright-reporter-demo@head123def456"
 
 github_report_disabled_output="$(
   INPUT_COMMAND=test \
@@ -101,5 +116,26 @@ github_report_disabled_output="$(
 )"
 
 assert_contains "$github_report_disabled_output" "GitHub report: disabled"
+assert_contains "$github_report_disabled_output" "checkly@latest test --reporter=github"
+
+deployment_event_path="$(mktemp)"
+trap 'rm -f "$github_event_path" "$deployment_event_path"' EXIT
+cat > "$deployment_event_path" <<'JSON'
+{
+  "deployment_status": {
+    "environment_url": "https://preview.example.com"
+  }
+}
+JSON
+
+deployment_url_output="$(
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_REPORT=false \
+  GITHUB_EVENT_NAME=deployment_status \
+  GITHUB_EVENT_PATH="$deployment_event_path" \
+  run_dry
+)"
+
+assert_contains "$deployment_url_output" "Environment URL: https://preview.example.com"
 
 echo "All local action tests passed."
