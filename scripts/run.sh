@@ -79,30 +79,32 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
-validate_cli_version_for_github_report() {
+cli_version_supports_github_report() {
   local version
   version="$(trim "${1:-}")"
-  if [[ -z "$version" ]]; then
-    return
-  fi
 
-  # Only reject exact pinned stable semver below 8.12.0. Dist-tags, ranges,
-  # canaries, and prereleases are allowed because they may point at compatible
-  # builds before a stable release exists.
-  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  # Only exact pinned stable semver is comparable against the 8.12.0 floor.
+  # Dist-tags, ranges, canaries, and prereleases pass because they may point
+  # at compatible builds before a stable release exists.
+  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
     local major="${BASH_REMATCH[1]}"
     local minor="${BASH_REMATCH[2]}"
-    local patch="${BASH_REMATCH[3]}"
 
     if (( major < 8 || (major == 8 && minor < 12) )); then
-      echo "::error::github-report requires Checkly CLI 8.12.0 or newer when cli-version is pinned. Use cli-version: latest, a canary/prerelease, or a version >= 8.12.0. Got '${version}'." >&2
-      exit 1
+      return 1
     fi
-
-    # Keep shellcheck/linters happy that patch is intentionally parsed as part
-    # of the exact semver guard even though the minimum is major/minor aligned.
-    : "$patch"
   fi
+
+  return 0
+}
+
+# Reasons are interpolated into ::warning:: workflow commands and the step
+# summary; constrain them to a safe charset so a malformed or hostile
+# preflight response can never inject workflow commands or extra lines.
+sanitize_reason() {
+  local value
+  value="$(printf '%s' "${1:-}" | tr -cd 'a-z0-9_')"
+  printf '%s' "${value:-unavailable}"
 }
 
 write_output() {
@@ -192,14 +194,13 @@ clear_github_report_env() {
 }
 
 configure_generic_repo_env() {
-  local repository
-  repository="$(resolve_github_repository)"
+  local repository="$1"
+  local sha="$2"
+
   if [[ -n "$repository" ]]; then
     export CHECKLY_REPO_URL="${CHECKLY_REPO_URL:-${GITHUB_SERVER_URL:-https://github.com}/${repository}}"
   fi
 
-  local sha
-  sha="$(resolve_github_sha)"
   if [[ -n "$sha" ]]; then
     export CHECKLY_REPO_SHA="${CHECKLY_REPO_SHA:-$sha}"
   fi
@@ -219,26 +220,15 @@ configure_deployment_environment_url() {
 }
 
 configure_github_report() {
-  local value="${INPUT_GITHUB_REPORT:-true}"
-  if falsey "$value"; then
-    clear_github_report_env
-    return
-  fi
-  if ! truthy "$value"; then
-    echo "::error::Expected boolean input for github-report, got '${value}'." >&2
-    exit 1
-  fi
+  local repository="$1"
+  local sha="$2"
 
   export CHECKLY_GITHUB_REPORT=true
 
-  local repository
-  repository="$(resolve_github_repository)"
   if [[ -n "$repository" ]]; then
     export CHECKLY_GITHUB_REPOSITORY="$repository"
   fi
 
-  local sha
-  sha="$(resolve_github_sha)"
   if [[ -n "$sha" ]]; then
     export CHECKLY_GITHUB_SHA="$sha"
   fi
@@ -336,6 +326,8 @@ async function main() {
         'x-checkly-cli-version': process.env.CHECKLY_PREFLIGHT_CLI_VERSION ?? '',
       },
       body: JSON.stringify(payload),
+      // The preflight is advisory: never let a slow backend hold up the run.
+      signal: AbortSignal.timeout(10_000),
     })
 
     if (!response.ok) {
@@ -397,7 +389,12 @@ if [[ "$command_name" == "test" && -n "$(trim "${INPUT_FAIL_ON_NO_MATCHING:-}")"
   exit 1
 fi
 
-configure_generic_repo_env
+# Resolve the repository/sha once; both the generic repo env and the GitHub
+# report env derive from the same values.
+github_repository="$(resolve_github_repository)"
+github_sha="$(resolve_github_sha)"
+
+configure_generic_repo_env "$github_repository" "$github_sha"
 configure_deployment_environment_url
 
 github_report_requested=false
@@ -410,17 +407,27 @@ if falsey "${INPUT_GITHUB_REPORT:-true}"; then
   clear_github_report_env
 elif truthy "${INPUT_GITHUB_REPORT:-true}"; then
   github_report_requested=true
-  validate_cli_version_for_github_report "$cli_version"
-  configure_github_report
-  preflight_result="$(github_report_preflight)"
-  IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
-  if [[ "$github_report_available" == "true" ]]; then
-    detach_run=true
-    github_reporter_run=false
-  else
+  if ! cli_version_supports_github_report "$cli_version"; then
+    # Writeback needs CLI >= 8.12.0, but an older pinned CLI is not an error:
+    # fall back to the non-detached mode like any other unavailable reason.
+    github_report_reason="cli_version_too_old"
     clear_github_report_env
     if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      echo "::warning::Checkly GitHub App reporting is unavailable (${github_report_reason}). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead."
+      echo "::warning::GitHub Check writeback needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Use cli-version: latest or >= 8.12.0 to enable detached GitHub Check reporting."
+    fi
+  else
+    configure_github_report "$github_repository" "$github_sha"
+    preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
+    IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
+    github_report_reason="$(sanitize_reason "$github_report_reason")"
+    if [[ "$github_report_available" == "true" ]]; then
+      detach_run=true
+      github_reporter_run=false
+    else
+      clear_github_report_env
+      if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+        echo "::warning::Checkly GitHub App reporting is unavailable (${github_report_reason}). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead."
+      fi
     fi
   fi
 else

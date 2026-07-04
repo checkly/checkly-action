@@ -84,11 +84,23 @@ fallback_command_output="$(
 assert_contains "$fallback_command_output" "checkly@8.12.0 test --reporter=github"
 assert_contains "$fallback_command_output" "GitHub report: unavailable (github_app_not_connected), waiting for CLI result"
 
-assert_fails_with "github-report requires Checkly CLI 8.12.0 or newer" env \
+# An old pinned CLI must fall back (skipping the preflight entirely), not fail
+# the job: CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true would force the detached
+# path if the preflight were still consulted.
+old_cli_fallback_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=8.11.9 \
   INPUT_GITHUB_REPORT=true \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  run_dry
+)"
+
+assert_contains "$old_cli_fallback_output" "checkly@8.11.9 test --reporter=github"
+assert_contains "$old_cli_fallback_output" "GitHub report: unavailable (cli_version_too_old), waiting for CLI result"
+
+assert_fails_with "Expected boolean input for github-report" env \
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_REPORT=banana \
   CHECKLY_ACTION_DRY_RUN=1 \
   "$ROOT_DIR/scripts/run.sh"
 
