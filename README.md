@@ -2,9 +2,9 @@
 
 Run Checkly checks from GitHub Actions with the Checkly CLI.
 
-This action is a small wrapper around `npx checkly@<version> test --detach` and
-`npx checkly@<version> trigger --detach`. It keeps the Checkly CLI as the source
-of truth while making the common GitHub Actions setup easier to discover.
+This action is a small wrapper around `npx checkly@<version> test` and
+`npx checkly@<version> trigger`. It keeps the Checkly CLI as the source of truth
+while making the common GitHub Actions setup easier to discover.
 
 ## Usage
 
@@ -57,16 +57,27 @@ with:
     production,backend
 ```
 
-The action always starts detached runs. The Checkly CLI prints a test session ID
-and session URL; this action exposes them as outputs and writes them to the
-GitHub Actions step summary.
+When `github-report` is enabled, the action asks Checkly whether the Checkly
+GitHub App is connected to the repository and can report GitHub Checks. If it is,
+the action runs the CLI with `--detach`, passes GitHub Actions metadata to the
+CLI, and Checkly posts a GitHub Check that updates when the session finishes.
+
+If GitHub Check reporting is unavailable, the action runs without `--detach` and
+waits for the test session to finish so the GitHub Actions job reports the
+result. It also uses the CLI GitHub reporter and writes the Checkly summary to
+the GitHub Actions step summary.
+
+For `deployment_status` workflows, the action exposes
+`github.event.deployment_status.environment_url` as `ENVIRONMENT_URL` when that
+environment variable is not already set. For pull request preview URLs, pass the
+target URL explicitly through `env` or the workflow `env` block.
 
 ## Inputs
 
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Defaults to `latest`. |
+| `cli-version` | Checkly CLI npm version. Defaults to `latest`. GitHub Check writeback needs `8.12.0` or newer; older pinned versions fall back to waiting in the Action. Dist-tags, canaries, and prereleases are assumed compatible. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |
@@ -86,7 +97,7 @@ GitHub Actions step summary.
 | `verify-runtime-dependencies` | `test` only. Set to `false` to pass `--no-verify-runtime-dependencies`. |
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
-| `github-report` | Best-effort GitHub Check reporting when the Checkly GitHub App is connected. Defaults to `true`. |
+| `github-report` | Use detached Checkly runs with GitHub Check writeback when the Checkly GitHub App is connected. Falls back to waiting in the Action when unavailable. Defaults to `true`. |
 
 ## Outputs
 

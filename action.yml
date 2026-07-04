@@ -12,7 +12,7 @@ inputs:
     required: false
     default: test
   cli-version:
-    description: Checkly CLI npm version to run.
+    description: Checkly CLI npm version to run. GitHub Check writeback needs 8.12.0 or newer; older pinned versions fall back to waiting in the Action.
     required: false
     default: latest
   working-directory:
@@ -76,7 +76,7 @@ inputs:
     description: Set to true or false to pass --verbose or --no-verbose.
     required: false
   github-report:
-    description: Best-effort GitHub Check reporting when the Checkly GitHub App is connected.
+    description: Use detached Checkly runs with GitHub Check writeback when the Checkly GitHub App is connected. Falls back to waiting in the Action when unavailable.
     required: false
     default: "true"
 
