@@ -83,6 +83,7 @@ fallback_command_output="$(
 
 assert_contains "$fallback_command_output" "checkly@8.12.0 test --reporter=github"
 assert_contains "$fallback_command_output" "GitHub report: unavailable (github_app_not_connected), waiting for CLI result"
+assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead: https://github.com/apps/checkly"
 
 # An old pinned CLI must fall back (skipping the preflight entirely), not fail
 # the job: CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true would force the detached
