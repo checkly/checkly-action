@@ -65,7 +65,9 @@ CLI, and Checkly posts a GitHub Check that updates when the session finishes.
 If GitHub Check reporting is unavailable, the action runs without `--detach` and
 waits for the test session to finish so the GitHub Actions job reports the
 result. It also uses the CLI GitHub reporter and writes the Checkly summary to
-the GitHub Actions step summary.
+the GitHub Actions step summary. Install the
+[Checkly GitHub App](https://github.com/apps/checkly) on the repository to run
+detached and receive a Checkly GitHub Check instead.
 
 For `deployment_status` workflows, the action exposes
 `github.event.deployment_status.environment_url` as `ENVIRONMENT_URL` when that

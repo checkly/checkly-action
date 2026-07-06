@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+CHECKLY_GITHUB_APP_URL="https://github.com/apps/checkly"
+
 trim() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -426,7 +428,7 @@ elif truthy "${INPUT_GITHUB_REPORT:-true}"; then
     else
       clear_github_report_env
       if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-        echo "::warning::Checkly GitHub App reporting is unavailable (${github_report_reason}). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead."
+        echo "::warning::Checkly GitHub App reporting is unavailable (${github_report_reason}). Running without --detach so this GitHub Actions job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead: ${CHECKLY_GITHUB_APP_URL}"
       fi
     fi
   fi
@@ -536,7 +538,7 @@ if [[ "$github_report_requested" == "true" && "$github_report_available" == "tru
   append_summary "GitHub Check reporting is enabled for this run."
 elif [[ "$github_report_requested" == "true" ]]; then
   append_summary ""
-  append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job waited for the Checkly run to finish. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check."
+  append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job waited for the Checkly run to finish. [Install the Checkly GitHub App](${CHECKLY_GITHUB_APP_URL}) on this repository to run detached and receive a Checkly GitHub Check."
 fi
 
 rm -f "$output_file"
