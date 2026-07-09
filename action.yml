@@ -12,7 +12,7 @@ inputs:
     required: false
     default: test
   cli-version:
-    description: Checkly CLI npm version to run. GitHub Check writeback needs 8.12.0 or newer; older pinned versions fall back to waiting in the Action.
+    description: Checkly CLI npm version to run. GitHub Check reporting needs 8.12.0 or newer.
     required: false
     default: latest
   working-directory:
@@ -53,7 +53,7 @@ inputs:
     description: Name to use when storing results as a Checkly test session.
     required: false
   timeout:
-    description: Timeout in seconds to wait for checks to complete. Mostly useful when detach is disabled in future versions.
+    description: Timeout in seconds to wait for checks to complete. Mostly useful when reporting through GitHub Actions.
     required: false
   retries:
     description: Number of times to retry a failing run.
@@ -75,10 +75,10 @@ inputs:
   verbose:
     description: Set to true or false to pass --verbose or --no-verbose.
     required: false
-  github-report:
-    description: Use detached Checkly runs with GitHub Check writeback when the Checkly GitHub App is connected. Falls back to waiting in the Action when unavailable.
+  reporting:
+    description: Where to report the Checkly result. Use "auto", "github-check", or "github-actions".
     required: false
-    default: "true"
+    default: auto
 
 outputs:
   test-session-id:
@@ -116,4 +116,4 @@ runs:
         INPUT_VERIFY_RUNTIME_DEPENDENCIES: ${{ inputs.verify-runtime-dependencies }}
         INPUT_FAIL_ON_NO_MATCHING: ${{ inputs.fail-on-no-matching }}
         INPUT_VERBOSE: ${{ inputs.verbose }}
-        INPUT_GITHUB_REPORT: ${{ inputs.github-report }}
+        INPUT_REPORTING: ${{ inputs.reporting }}

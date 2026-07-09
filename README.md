@@ -57,17 +57,19 @@ with:
     production,backend
 ```
 
-When `github-report` is enabled, the action asks Checkly whether the Checkly
-GitHub App is connected to the repository and can report GitHub Checks. If it is,
-the action runs the CLI with `--detach`, passes GitHub Actions metadata to the
-CLI, and Checkly posts a GitHub Check that updates when the session finishes.
+The `reporting` input controls where the Checkly result is reported:
 
-If GitHub Check reporting is unavailable, the action runs without `--detach` and
-waits for the test session to finish so the GitHub Actions job reports the
-result. It also uses the CLI GitHub reporter and writes the Checkly summary to
-the GitHub Actions step summary. Install the
-[Checkly GitHub App](https://github.com/apps/checkly) on the repository to run
-detached and receive a Checkly GitHub Check instead.
+- `auto` (default): use a detached run with GitHub Check reporting when the
+  Checkly GitHub App can report on the repository. Otherwise, wait in the
+  GitHub Actions job and report there.
+- `github-check`: require detached GitHub Check reporting. The action fails
+  before running checks if the Checkly GitHub App cannot report on the
+  repository.
+- `github-actions`: always wait in the GitHub Actions job and report through the
+  CLI GitHub reporter and step summary.
+
+Install the [Checkly GitHub App](https://github.com/apps/checkly) on the
+repository to use detached GitHub Check reporting.
 
 For `deployment_status` workflows, the action exposes
 `github.event.deployment_status.environment_url` as `ENVIRONMENT_URL` when that
@@ -79,7 +81,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Defaults to `latest`. GitHub Check writeback needs `8.12.0` or newer; older pinned versions fall back to waiting in the Action. Dist-tags, canaries, and prereleases are assumed compatible. |
+| `cli-version` | Checkly CLI npm version. Defaults to `latest`. GitHub Check reporting needs `8.12.0` or newer. Dist-tags, canaries, and prereleases are assumed compatible. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |
@@ -99,14 +101,14 @@ target URL explicitly through `env` or the workflow `env` block.
 | `verify-runtime-dependencies` | `test` only. Set to `false` to pass `--no-verify-runtime-dependencies`. |
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
-| `github-report` | Use detached Checkly runs with GitHub Check writeback when the Checkly GitHub App is connected. Falls back to waiting in the Action when unavailable. Defaults to `true`. |
+| `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
 
 ## Outputs
 
 | Output | Description |
 | --- | --- |
-| `test-session-id` | Detached Checkly test session ID, when detected from CLI output. |
-| `test-session-url` | Detached Checkly test session URL, when detected from CLI output. |
+| `test-session-id` | Checkly test session ID, when detected from CLI output. |
+| `test-session-url` | Checkly test session URL, when detected from CLI output. |
 
 ## Local test
 
