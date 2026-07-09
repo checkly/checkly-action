@@ -133,6 +133,7 @@ trap 'rm -f "$github_event_path"' EXIT
 cat > "$github_event_path" <<'JSON'
 {
   "pull_request": {
+    "number": 5,
     "head": {
       "sha": "head123def456",
       "repo": {
@@ -161,10 +162,12 @@ github_report_output="$(
   GITHUB_HEAD_REF=herve/test-checkly-action \
   GITHUB_BASE_REF=main \
   GITHUB_SERVER_URL=https://github.com \
+  ENVIRONMENT_URL=https://preview.example.com \
   run_dry
 )"
 
 assert_contains "$github_report_output" "Reporting: GitHub Check \"Checkly PR code checks\" for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "GitHub metadata: source=checkly-action pullRequestNumber=5 environmentUrl=https://preview.example.com"
 
 github_actions_output="$(
   INPUT_COMMAND=test \
