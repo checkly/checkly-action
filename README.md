@@ -29,6 +29,7 @@ jobs:
           install-command: npm ci
           tags: production,webapp
           grep: checkout
+          check-name: Checkly PR code checks
         env:
           CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
           CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
@@ -102,6 +103,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
 | `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
+| `check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Defaults to `Checkly`. |
 
 ## Outputs
 

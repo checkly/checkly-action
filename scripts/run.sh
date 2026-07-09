@@ -182,6 +182,7 @@ resolve_github_sha() {
 
 clear_github_report_env() {
   unset CHECKLY_GITHUB_REPORT
+  unset CHECKLY_GITHUB_CHECK_NAME
   unset CHECKLY_GITHUB_REPOSITORY
   unset CHECKLY_GITHUB_SHA
   unset CHECKLY_GITHUB_RUN_ID
@@ -224,8 +225,13 @@ configure_deployment_environment_url() {
 configure_github_report() {
   local repository="$1"
   local sha="$2"
+  local check_name="$3"
 
   export CHECKLY_GITHUB_REPORT=true
+
+  if [[ -n "$check_name" ]]; then
+    export CHECKLY_GITHUB_CHECK_NAME="$check_name"
+  fi
 
   if [[ -n "$repository" ]]; then
     export CHECKLY_GITHUB_REPOSITORY="$repository"
@@ -300,6 +306,7 @@ const accountId = process.env.CHECKLY_ACCOUNT_ID
 const apiKey = process.env.CHECKLY_API_KEY
 
 const payload = {
+  checkName: process.env.CHECKLY_GITHUB_CHECK_NAME,
   repository: process.env.CHECKLY_GITHUB_REPOSITORY,
   sha: process.env.CHECKLY_GITHUB_SHA,
   runId: process.env.CHECKLY_GITHUB_RUN_ID,
@@ -353,6 +360,7 @@ cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
 install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 reporting="$(trim "${INPUT_REPORTING:-auto}")"
+check_name="$(trim "${INPUT_CHECK_NAME:-}")"
 
 case "$command_name" in
   test|trigger) ;;
@@ -428,7 +436,7 @@ else
       echo "::warning::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Reporting through GitHub Actions instead. Use cli-version: latest or >= 8.12.0 to enable detached GitHub Check reporting."
     fi
   else
-    configure_github_report "$github_repository" "$github_sha"
+    configure_github_report "$github_repository" "$github_sha" "$check_name"
     preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
     IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
     github_report_reason="$(sanitize_reason "$github_report_reason")"
@@ -490,6 +498,9 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
     printf 'Reporting: GitHub Actions\n'
   elif [[ "$github_check_requested" == "true" && "$github_report_available" == "true" ]]; then
     printf 'Reporting: GitHub Check'
+    if [[ -n "${CHECKLY_GITHUB_CHECK_NAME:-}" ]]; then
+      printf ' "%s"' "$CHECKLY_GITHUB_CHECK_NAME"
+    fi
     if [[ -n "${CHECKLY_GITHUB_REPOSITORY:-}" && -n "${CHECKLY_GITHUB_SHA:-}" ]]; then
       printf ' for %s@%s' "$CHECKLY_GITHUB_REPOSITORY" "$CHECKLY_GITHUB_SHA"
     fi
