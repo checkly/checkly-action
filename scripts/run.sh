@@ -230,13 +230,13 @@ configure_deployment_environment_url() {
 configure_github_report() {
   local repository="$1"
   local sha="$2"
-  local check_name="$3"
+  local github_check_name="$3"
 
   export CHECKLY_GITHUB_REPORT=true
   export CHECKLY_GITHUB_SOURCE=checkly-action
 
-  if [[ -n "$check_name" ]]; then
-    export CHECKLY_GITHUB_CHECK_NAME="$check_name"
+  if [[ -n "$github_check_name" ]]; then
+    export CHECKLY_GITHUB_CHECK_NAME="$github_check_name"
   fi
 
   if is_pull_request_event; then
@@ -325,7 +325,7 @@ const apiKey = process.env.CHECKLY_API_KEY
 
 const payload = {
   source: process.env.CHECKLY_GITHUB_SOURCE,
-  checkName: process.env.CHECKLY_GITHUB_CHECK_NAME,
+  githubCheckName: process.env.CHECKLY_GITHUB_CHECK_NAME,
   pullRequestNumber: process.env.CHECKLY_GITHUB_PULL_REQUEST_NUMBER,
   environmentUrl: process.env.CHECKLY_GITHUB_ENVIRONMENT_URL,
   repository: process.env.CHECKLY_GITHUB_REPOSITORY,
@@ -381,7 +381,7 @@ cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
 install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 reporting="$(trim "${INPUT_REPORTING:-auto}")"
-check_name="$(trim "${INPUT_CHECK_NAME:-}")"
+github_check_name="$(trim "${INPUT_GITHUB_CHECK_NAME:-}")"
 
 case "$command_name" in
   test|trigger) ;;
@@ -457,7 +457,7 @@ else
       echo "::warning::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Reporting through GitHub Actions instead. Use cli-version: latest or >= 8.12.0 to enable detached GitHub Check reporting."
     fi
   else
-    configure_github_report "$github_repository" "$github_sha" "$check_name"
+    configure_github_report "$github_repository" "$github_sha" "$github_check_name"
     preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
     IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
     github_report_reason="$(sanitize_reason "$github_report_reason")"
