@@ -72,6 +72,11 @@ assert_contains "$trigger_command_output" "--tags production"
 assert_contains "$trigger_command_output" "--check-id abc\\,def"
 assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
 
+assert_fails_with "Unsupported command 'deploy'" env \
+  INPUT_COMMAND=deploy \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
 fallback_command_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=8.12.0 \
