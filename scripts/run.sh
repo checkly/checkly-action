@@ -150,6 +150,8 @@ try {
   }
   if (typeof value === 'string' && value.trim() !== '') {
     process.stdout.write(value)
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    process.stdout.write(String(value))
   }
 } catch (_) {
   process.exit(0)
@@ -182,7 +184,10 @@ resolve_github_sha() {
 
 clear_github_report_env() {
   unset CHECKLY_GITHUB_REPORT
+  unset CHECKLY_GITHUB_SOURCE
   unset CHECKLY_GITHUB_CHECK_NAME
+  unset CHECKLY_GITHUB_PULL_REQUEST_NUMBER
+  unset CHECKLY_GITHUB_ENVIRONMENT_URL
   unset CHECKLY_GITHUB_REPOSITORY
   unset CHECKLY_GITHUB_SHA
   unset CHECKLY_GITHUB_RUN_ID
@@ -228,9 +233,22 @@ configure_github_report() {
   local check_name="$3"
 
   export CHECKLY_GITHUB_REPORT=true
+  export CHECKLY_GITHUB_SOURCE=checkly-action
 
   if [[ -n "$check_name" ]]; then
     export CHECKLY_GITHUB_CHECK_NAME="$check_name"
+  fi
+
+  if is_pull_request_event; then
+    local pull_request_number
+    pull_request_number="$(github_event_value "pull_request.number")"
+    if [[ -n "$pull_request_number" ]]; then
+      export CHECKLY_GITHUB_PULL_REQUEST_NUMBER="$pull_request_number"
+    fi
+  fi
+
+  if [[ -n "${ENVIRONMENT_URL:-}" ]]; then
+    export CHECKLY_GITHUB_ENVIRONMENT_URL="$ENVIRONMENT_URL"
   fi
 
   if [[ -n "$repository" ]]; then
@@ -306,7 +324,10 @@ const accountId = process.env.CHECKLY_ACCOUNT_ID
 const apiKey = process.env.CHECKLY_API_KEY
 
 const payload = {
+  source: process.env.CHECKLY_GITHUB_SOURCE,
   checkName: process.env.CHECKLY_GITHUB_CHECK_NAME,
+  pullRequestNumber: process.env.CHECKLY_GITHUB_PULL_REQUEST_NUMBER,
+  environmentUrl: process.env.CHECKLY_GITHUB_ENVIRONMENT_URL,
   repository: process.env.CHECKLY_GITHUB_REPOSITORY,
   sha: process.env.CHECKLY_GITHUB_SHA,
   runId: process.env.CHECKLY_GITHUB_RUN_ID,
@@ -503,6 +524,14 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
     fi
     if [[ -n "${CHECKLY_GITHUB_REPOSITORY:-}" && -n "${CHECKLY_GITHUB_SHA:-}" ]]; then
       printf ' for %s@%s' "$CHECKLY_GITHUB_REPOSITORY" "$CHECKLY_GITHUB_SHA"
+    fi
+    printf '\n'
+    printf 'GitHub metadata: source=%s' "${CHECKLY_GITHUB_SOURCE:-}"
+    if [[ -n "${CHECKLY_GITHUB_PULL_REQUEST_NUMBER:-}" ]]; then
+      printf ' pullRequestNumber=%s' "$CHECKLY_GITHUB_PULL_REQUEST_NUMBER"
+    fi
+    if [[ -n "${CHECKLY_GITHUB_ENVIRONMENT_URL:-}" ]]; then
+      printf ' environmentUrl=%s' "$CHECKLY_GITHUB_ENVIRONMENT_URL"
     fi
     printf '\n'
   elif [[ "$github_check_requested" == "true" ]]; then
