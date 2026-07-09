@@ -55,7 +55,7 @@ assert_contains "$test_command_output" "--tags production\\,webapp --tags produc
 assert_contains "$test_command_output" "--grep checkout"
 assert_contains "$test_command_output" "--update-snapshots"
 assert_contains "$test_command_output" "checks/\\*\\*/\\*.check.ts smoke.check.ts"
-assert_contains "$test_command_output" "GitHub report: detached writeback enabled"
+assert_contains "$test_command_output" "Reporting: GitHub Check"
 
 trigger_command_output="$(
   INPUT_COMMAND=trigger \
@@ -82,8 +82,8 @@ fallback_command_output="$(
 )"
 
 assert_contains "$fallback_command_output" "checkly@8.12.0 test --reporter=github"
-assert_contains "$fallback_command_output" "GitHub report: unavailable (github_app_not_connected), waiting for CLI result"
-assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check instead: https://github.com/apps/checkly"
+assert_contains "$fallback_command_output" "Reporting: GitHub Actions (GitHub Check unavailable: github_app_not_connected)"
+assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: https://github.com/apps/checkly"
 
 # An old pinned CLI must fall back (skipping the preflight entirely), not fail
 # the job: CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true would force the detached
@@ -91,24 +91,37 @@ assert_contains "$fallback_command_output" "Install the Checkly GitHub App on th
 old_cli_fallback_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=8.11.9 \
-  INPUT_GITHUB_REPORT=true \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   run_dry
 )"
 
 assert_contains "$old_cli_fallback_output" "checkly@8.11.9 test --reporter=github"
-assert_contains "$old_cli_fallback_output" "GitHub report: unavailable (cli_version_too_old), waiting for CLI result"
+assert_contains "$old_cli_fallback_output" "Reporting: GitHub Actions (GitHub Check unavailable: cli_version_too_old)"
 
-assert_fails_with "Expected boolean input for github-report" env \
+assert_fails_with "Unsupported reporting 'banana'" env \
   INPUT_COMMAND=test \
-  INPUT_GITHUB_REPORT=banana \
+  INPUT_REPORTING=banana \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
+assert_fails_with "GitHub Check reporting needs Checkly CLI 8.12.0 or newer" env \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.11.9 \
+  INPUT_REPORTING=github-check \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
+assert_fails_with "Checkly GitHub Check reporting is unavailable (github_app_not_connected)" env \
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-check \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=false \
+  CHECKLY_ACTION_GITHUB_REPORT_REASON=github_app_not_connected \
   CHECKLY_ACTION_DRY_RUN=1 \
   "$ROOT_DIR/scripts/run.sh"
 
 prerelease_version_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=0.0.0-canary.58c867e \
-  INPUT_GITHUB_REPORT=true \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   run_dry
 )"
@@ -132,7 +145,7 @@ JSON
 
 github_report_output="$(
   INPUT_COMMAND=test \
-  INPUT_GITHUB_REPORT=true \
+  INPUT_REPORTING=github-check \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
   GITHUB_SHA=merge123def456 \
@@ -150,12 +163,12 @@ github_report_output="$(
   run_dry
 )"
 
-assert_contains "$github_report_output" "GitHub report: detached writeback enabled for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "Reporting: GitHub Check for checkly/playwright-reporter-demo@head123def456"
 
-github_report_disabled_output="$(
+github_actions_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=8.11.9 \
-  INPUT_GITHUB_REPORT=false \
+  INPUT_REPORTING=github-actions \
   CHECKLY_GITHUB_REPORT=true \
   CHECKLY_GITHUB_REPOSITORY=spoofed/repository \
   CHECKLY_GITHUB_SHA=spoofed-sha \
@@ -164,8 +177,8 @@ github_report_disabled_output="$(
   run_dry
 )"
 
-assert_contains "$github_report_disabled_output" "GitHub report: disabled"
-assert_contains "$github_report_disabled_output" "checkly@8.11.9 test --reporter=github"
+assert_contains "$github_actions_output" "Reporting: GitHub Actions"
+assert_contains "$github_actions_output" "checkly@8.11.9 test --reporter=github"
 
 deployment_event_path="$(mktemp)"
 trap 'rm -f "$github_event_path" "$deployment_event_path"' EXIT
@@ -179,7 +192,7 @@ JSON
 
 deployment_url_output="$(
   INPUT_COMMAND=test \
-  INPUT_GITHUB_REPORT=false \
+  INPUT_REPORTING=github-actions \
   GITHUB_EVENT_NAME=deployment_status \
   GITHUB_EVENT_PATH="$deployment_event_path" \
   run_dry
