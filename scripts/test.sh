@@ -146,6 +146,7 @@ JSON
 github_report_output="$(
   INPUT_COMMAND=test \
   INPUT_REPORTING=github-check \
+  INPUT_CHECK_NAME='Checkly PR code checks' \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
   GITHUB_SHA=merge123def456 \
@@ -163,7 +164,7 @@ github_report_output="$(
   run_dry
 )"
 
-assert_contains "$github_report_output" "Reporting: GitHub Check for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "Reporting: GitHub Check \"Checkly PR code checks\" for checkly/playwright-reporter-demo@head123def456"
 
 github_actions_output="$(
   INPUT_COMMAND=test \
