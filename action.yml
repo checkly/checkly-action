@@ -79,7 +79,7 @@ inputs:
     description: Where to report the Checkly result. Use "auto", "github-check", or "github-actions".
     required: false
     default: auto
-  check-name:
+  github-check-name:
     description: GitHub Check name to create when reporting through the Checkly GitHub App. Defaults to "Checkly".
     required: false
 
@@ -120,4 +120,4 @@ runs:
         INPUT_FAIL_ON_NO_MATCHING: ${{ inputs.fail-on-no-matching }}
         INPUT_VERBOSE: ${{ inputs.verbose }}
         INPUT_REPORTING: ${{ inputs.reporting }}
-        INPUT_CHECK_NAME: ${{ inputs.check-name }}
+        INPUT_GITHUB_CHECK_NAME: ${{ inputs.github-check-name }}
