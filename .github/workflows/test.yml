@@ -5,12 +5,67 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  shell:
+  harness:
+    name: Harness / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Validate syntax
+        run: |
+          bash -n scripts/*.sh
+          node --check scripts/test-preflight-server.cjs
+
+      - name: Run ShellCheck
+        if: runner.os == 'Linux'
+        run: shellcheck scripts/*.sh
+
+      - name: Run actionlint
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+
+      - name: Run command behavior tests
+        run: ./scripts/test.sh
+
+      - name: Run integration tests
+        run: ./scripts/test-integration.sh
+
+  composite-action:
+    name: Composite action contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: bash -n scripts/run.sh
-      - run: bash -n scripts/test.sh
-      - run: ./scripts/test.sh
+      - uses: actions/checkout@v6
+
+      - name: Invoke the local Action
+        uses: ./
+        env:
+          CHECKLY_ACTION_DRY_RUN: "1"
+          CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE: "true"
+        with:
+          command: test
+          cli-version: 8.15.0
+          reporting: github-check
+          github-check-name: Checkly action contract
+          tags: smoke

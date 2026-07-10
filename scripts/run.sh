@@ -81,23 +81,39 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
-cli_version_supports_github_report() {
+cli_version_supports_floor() {
   local version
   version="$(trim "${1:-}")"
+  local floor_major="$2"
+  local floor_minor="$3"
+  local floor_patch="$4"
 
-  # Only exact pinned stable semver is comparable against the 8.12.0 floor.
+  # Only exact pinned stable semver is comparable against a compatibility floor.
   # Dist-tags, ranges, canaries, and prereleases pass because they may point
   # at compatible builds before a stable release exists.
-  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
     local major="${BASH_REMATCH[1]}"
     local minor="${BASH_REMATCH[2]}"
+    local patch="${BASH_REMATCH[3]}"
 
-    if (( major < 8 || (major == 8 && minor < 12) )); then
+    if ((
+      major < floor_major
+      || (major == floor_major && minor < floor_minor)
+      || (major == floor_major && minor == floor_minor && patch < floor_patch)
+    )); then
       return 1
     fi
   fi
 
   return 0
+}
+
+cli_version_supports_github_report() {
+  cli_version_supports_floor "$1" 8 12 0
+}
+
+cli_version_supports_github_check_name() {
+  cli_version_supports_floor "$1" 8 15 0
 }
 
 # Reasons are interpolated into ::warning:: workflow commands and the step
@@ -398,6 +414,12 @@ case "$reporting" in
     exit 1
     ;;
 esac
+
+if [[ "$reporting" != "github-actions" && -n "$github_check_name" ]] \
+  && ! cli_version_supports_github_check_name "$cli_version"; then
+  echo "::error::Custom GitHub Check names need Checkly CLI 8.15.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.15.0, remove github-check-name, or set reporting: github-actions." >&2
+  exit 1
+fi
 
 if [[ "$command_name" == "trigger" && -n "$(trim "${INPUT_GREP:-}")" ]]; then
   echo "::error::Input 'grep' is only supported with command=test." >&2

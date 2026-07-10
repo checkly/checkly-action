@@ -80,7 +80,7 @@ inputs:
     required: false
     default: auto
   github-check-name:
-    description: GitHub Check name to create when reporting through the Checkly GitHub App. Defaults to "Checkly".
+    description: GitHub Check name to create when reporting through the Checkly GitHub App. Requires Checkly CLI 8.15.0 or newer. Defaults to "Checkly".
     required: false
 
 outputs:

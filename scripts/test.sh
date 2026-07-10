@@ -116,6 +116,14 @@ assert_fails_with "GitHub Check reporting needs Checkly CLI 8.12.0 or newer" env
   CHECKLY_ACTION_DRY_RUN=1 \
   "$ROOT_DIR/scripts/run.sh"
 
+assert_fails_with "Custom GitHub Check names need Checkly CLI 8.15.0 or newer" env \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.14.1 \
+  INPUT_REPORTING=github-check \
+  INPUT_GITHUB_CHECK_NAME='Checkly PR code checks' \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
 assert_fails_with "Checkly GitHub Check reporting is unavailable (github_app_not_connected)" env \
   INPUT_COMMAND=test \
   INPUT_REPORTING=github-check \

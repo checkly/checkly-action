@@ -103,7 +103,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
 | `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
-| `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Defaults to `Checkly`. |
+| `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Requires Checkly CLI `8.15.0` or newer and defaults to `Checkly`. |
 
 ## Outputs
 
@@ -112,8 +112,16 @@ target URL explicitly through `env` or the workflow `env` block.
 | `test-session-id` | Checkly test session ID, when detected from CLI output. |
 | `test-session-url` | Checkly test session URL, when detected from CLI output. |
 
-## Local test
+## Development
+
+The test harness does not need Checkly or GitHub credentials. It uses a local
+preflight server and a fake CLI process to exercise the complete Action flow.
 
 ```sh
+shellcheck scripts/*.sh
 ./scripts/test.sh
+./scripts/test-integration.sh
 ```
+
+See `AGENTS.md` for the repository invariants, complete verification commands,
+and release guidance.
