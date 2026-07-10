@@ -37,7 +37,7 @@ assert_fails_with() {
 
 test_command_output="$(
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=8.12.0 \
+  INPUT_CLI_VERSION=8.15.0 \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   INPUT_TAGS=$'production,webapp\nproduction,backend' \
   INPUT_GREP='checkout' \
@@ -50,7 +50,7 @@ test_command_output="$(
 )"
 
 assert_contains "$test_command_output" "Install command: npm ci"
-assert_contains "$test_command_output" "checkly@8.12.0 test --detach"
+assert_contains "$test_command_output" "checkly@8.15.0 test --detach"
 assert_contains "$test_command_output" "--tags production\\,webapp --tags production\\,backend"
 assert_contains "$test_command_output" "--grep checkout"
 assert_contains "$test_command_output" "--update-snapshots"
@@ -72,31 +72,23 @@ assert_contains "$trigger_command_output" "--tags production"
 assert_contains "$trigger_command_output" "--check-id abc\\,def"
 assert_contains "$trigger_command_output" "--no-fail-on-no-matching"
 
+assert_fails_with "Unsupported command 'deploy'" env \
+  INPUT_COMMAND=deploy \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
 fallback_command_output="$(
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=8.12.0 \
+  INPUT_CLI_VERSION=8.15.0 \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=false \
   CHECKLY_ACTION_GITHUB_REPORT_REASON=github_app_not_connected \
   GITHUB_ACTIONS=true \
   run_dry
 )"
 
-assert_contains "$fallback_command_output" "checkly@8.12.0 test --reporter=github"
+assert_contains "$fallback_command_output" "checkly@8.15.0 test --reporter=github"
 assert_contains "$fallback_command_output" "Reporting: GitHub Actions (GitHub Check unavailable: github_app_not_connected)"
 assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: https://github.com/apps/checkly"
-
-# An old pinned CLI must fall back (skipping the preflight entirely), not fail
-# the job: CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true would force the detached
-# path if the preflight were still consulted.
-old_cli_fallback_output="$(
-  INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=8.11.9 \
-  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
-  run_dry
-)"
-
-assert_contains "$old_cli_fallback_output" "checkly@8.11.9 test --reporter=github"
-assert_contains "$old_cli_fallback_output" "Reporting: GitHub Actions (GitHub Check unavailable: cli_version_too_old)"
 
 assert_fails_with "Unsupported reporting 'banana'" env \
   INPUT_COMMAND=test \
@@ -104,10 +96,10 @@ assert_fails_with "Unsupported reporting 'banana'" env \
   CHECKLY_ACTION_DRY_RUN=1 \
   "$ROOT_DIR/scripts/run.sh"
 
-assert_fails_with "GitHub Check reporting needs Checkly CLI 8.12.0 or newer" env \
+assert_fails_with "The Checkly Action needs Checkly CLI 8.15.0 or newer" env \
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=8.11.9 \
-  INPUT_REPORTING=github-check \
+  INPUT_CLI_VERSION=8.14.1 \
+  INPUT_REPORTING=github-actions \
   CHECKLY_ACTION_DRY_RUN=1 \
   "$ROOT_DIR/scripts/run.sh"
 
@@ -133,6 +125,7 @@ trap 'rm -f "$github_event_path"' EXIT
 cat > "$github_event_path" <<'JSON'
 {
   "pull_request": {
+    "number": 5,
     "head": {
       "sha": "head123def456",
       "repo": {
@@ -146,6 +139,7 @@ JSON
 github_report_output="$(
   INPUT_COMMAND=test \
   INPUT_REPORTING=github-check \
+  INPUT_GITHUB_CHECK_NAME='Checkly PR code checks' \
   CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
   GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
   GITHUB_SHA=merge123def456 \
@@ -160,14 +154,16 @@ github_report_output="$(
   GITHUB_HEAD_REF=herve/test-checkly-action \
   GITHUB_BASE_REF=main \
   GITHUB_SERVER_URL=https://github.com \
+  ENVIRONMENT_URL=https://preview.example.com \
   run_dry
 )"
 
-assert_contains "$github_report_output" "Reporting: GitHub Check for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "Reporting: GitHub Check \"Checkly PR code checks\" for checkly/playwright-reporter-demo@head123def456"
+assert_contains "$github_report_output" "GitHub metadata: source=checkly-action pullRequestNumber=5 environmentUrl=https://preview.example.com"
 
 github_actions_output="$(
   INPUT_COMMAND=test \
-  INPUT_CLI_VERSION=8.11.9 \
+  INPUT_CLI_VERSION=8.15.0 \
   INPUT_REPORTING=github-actions \
   CHECKLY_GITHUB_REPORT=true \
   CHECKLY_GITHUB_REPOSITORY=spoofed/repository \
@@ -178,7 +174,7 @@ github_actions_output="$(
 )"
 
 assert_contains "$github_actions_output" "Reporting: GitHub Actions"
-assert_contains "$github_actions_output" "checkly@8.11.9 test --reporter=github"
+assert_contains "$github_actions_output" "checkly@8.15.0 test --reporter=github"
 
 deployment_event_path="$(mktemp)"
 trap 'rm -f "$github_event_path" "$deployment_event_path"' EXIT

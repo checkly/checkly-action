@@ -81,18 +81,18 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
-cli_version_supports_github_report() {
+cli_version_is_supported() {
   local version
   version="$(trim "${1:-}")"
 
-  # Only exact pinned stable semver is comparable against the 8.12.0 floor.
+  # Only exact pinned stable semver is comparable against the 8.15.0 floor.
   # Dist-tags, ranges, canaries, and prereleases pass because they may point
   # at compatible builds before a stable release exists.
   if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
     local major="${BASH_REMATCH[1]}"
     local minor="${BASH_REMATCH[2]}"
 
-    if (( major < 8 || (major == 8 && minor < 12) )); then
+    if (( major < 8 || (major == 8 && minor < 15) )); then
       return 1
     fi
   fi
@@ -150,6 +150,8 @@ try {
   }
   if (typeof value === 'string' && value.trim() !== '') {
     process.stdout.write(value)
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    process.stdout.write(String(value))
   }
 } catch (_) {
   process.exit(0)
@@ -182,6 +184,10 @@ resolve_github_sha() {
 
 clear_github_report_env() {
   unset CHECKLY_GITHUB_REPORT
+  unset CHECKLY_GITHUB_SOURCE
+  unset CHECKLY_GITHUB_CHECK_NAME
+  unset CHECKLY_GITHUB_PULL_REQUEST_NUMBER
+  unset CHECKLY_GITHUB_ENVIRONMENT_URL
   unset CHECKLY_GITHUB_REPOSITORY
   unset CHECKLY_GITHUB_SHA
   unset CHECKLY_GITHUB_RUN_ID
@@ -224,8 +230,26 @@ configure_deployment_environment_url() {
 configure_github_report() {
   local repository="$1"
   local sha="$2"
+  local github_check_name="$3"
 
   export CHECKLY_GITHUB_REPORT=true
+  export CHECKLY_GITHUB_SOURCE=checkly-action
+
+  if [[ -n "$github_check_name" ]]; then
+    export CHECKLY_GITHUB_CHECK_NAME="$github_check_name"
+  fi
+
+  if is_pull_request_event; then
+    local pull_request_number
+    pull_request_number="$(github_event_value "pull_request.number")"
+    if [[ -n "$pull_request_number" ]]; then
+      export CHECKLY_GITHUB_PULL_REQUEST_NUMBER="$pull_request_number"
+    fi
+  fi
+
+  if [[ -n "${ENVIRONMENT_URL:-}" ]]; then
+    export CHECKLY_GITHUB_ENVIRONMENT_URL="$ENVIRONMENT_URL"
+  fi
 
   if [[ -n "$repository" ]]; then
     export CHECKLY_GITHUB_REPOSITORY="$repository"
@@ -300,6 +324,10 @@ const accountId = process.env.CHECKLY_ACCOUNT_ID
 const apiKey = process.env.CHECKLY_API_KEY
 
 const payload = {
+  source: process.env.CHECKLY_GITHUB_SOURCE,
+  githubCheckName: process.env.CHECKLY_GITHUB_CHECK_NAME,
+  pullRequestNumber: process.env.CHECKLY_GITHUB_PULL_REQUEST_NUMBER,
+  environmentUrl: process.env.CHECKLY_GITHUB_ENVIRONMENT_URL,
   repository: process.env.CHECKLY_GITHUB_REPOSITORY,
   sha: process.env.CHECKLY_GITHUB_SHA,
   runId: process.env.CHECKLY_GITHUB_RUN_ID,
@@ -353,6 +381,7 @@ cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
 install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 reporting="$(trim "${INPUT_REPORTING:-auto}")"
+github_check_name="$(trim "${INPUT_GITHUB_CHECK_NAME:-}")"
 
 case "$command_name" in
   test|trigger) ;;
@@ -369,6 +398,11 @@ case "$reporting" in
     exit 1
     ;;
 esac
+
+if ! cli_version_is_supported "$cli_version"; then
+  echo "::error::The Checkly Action needs Checkly CLI 8.15.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.15.0." >&2
+  exit 1
+fi
 
 if [[ "$command_name" == "trigger" && -n "$(trim "${INPUT_GREP:-}")" ]]; then
   echo "::error::Input 'grep' is only supported with command=test." >&2
@@ -418,31 +452,20 @@ if [[ "$reporting" == "github-actions" ]]; then
   clear_github_report_env
 else
   github_check_requested=true
-  if ! cli_version_supports_github_report "$cli_version"; then
-    github_report_reason="cli_version_too_old"
+  configure_github_report "$github_repository" "$github_sha" "$github_check_name"
+  preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
+  IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
+  github_report_reason="$(sanitize_reason "$github_report_reason")"
+  if [[ "$github_report_available" == "true" ]]; then
+    detach_run=true
+    github_reporter_run=false
+  else
     clear_github_report_env
     if [[ "$reporting" == "github-check" ]]; then
-      echo "::error::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.12.0, or set reporting: github-actions to wait for the result in this workflow." >&2
+      echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}" >&2
       exit 1
     elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      echo "::warning::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Reporting through GitHub Actions instead. Use cli-version: latest or >= 8.12.0 to enable detached GitHub Check reporting."
-    fi
-  else
-    configure_github_report "$github_repository" "$github_sha"
-    preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
-    IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
-    github_report_reason="$(sanitize_reason "$github_report_reason")"
-    if [[ "$github_report_available" == "true" ]]; then
-      detach_run=true
-      github_reporter_run=false
-    else
-      clear_github_report_env
-      if [[ "$reporting" == "github-check" ]]; then
-        echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}" >&2
-        exit 1
-      elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-        echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}"
-      fi
+      echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}"
     fi
   fi
 fi
@@ -490,8 +513,19 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
     printf 'Reporting: GitHub Actions\n'
   elif [[ "$github_check_requested" == "true" && "$github_report_available" == "true" ]]; then
     printf 'Reporting: GitHub Check'
+    if [[ -n "${CHECKLY_GITHUB_CHECK_NAME:-}" ]]; then
+      printf ' "%s"' "$CHECKLY_GITHUB_CHECK_NAME"
+    fi
     if [[ -n "${CHECKLY_GITHUB_REPOSITORY:-}" && -n "${CHECKLY_GITHUB_SHA:-}" ]]; then
       printf ' for %s@%s' "$CHECKLY_GITHUB_REPOSITORY" "$CHECKLY_GITHUB_SHA"
+    fi
+    printf '\n'
+    printf 'GitHub metadata: source=%s' "${CHECKLY_GITHUB_SOURCE:-}"
+    if [[ -n "${CHECKLY_GITHUB_PULL_REQUEST_NUMBER:-}" ]]; then
+      printf ' pullRequestNumber=%s' "$CHECKLY_GITHUB_PULL_REQUEST_NUMBER"
+    fi
+    if [[ -n "${CHECKLY_GITHUB_ENVIRONMENT_URL:-}" ]]; then
+      printf ' environmentUrl=%s' "$CHECKLY_GITHUB_ENVIRONMENT_URL"
     fi
     printf '\n'
   elif [[ "$github_check_requested" == "true" ]]; then

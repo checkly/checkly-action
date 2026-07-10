@@ -29,6 +29,7 @@ jobs:
           install-command: npm ci
           tags: production,webapp
           grep: checkout
+          github-check-name: Checkly PR code checks
         env:
           CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
           CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
@@ -81,7 +82,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Defaults to `latest`. GitHub Check reporting needs `8.12.0` or newer. Dist-tags, canaries, and prereleases are assumed compatible. |
+| `cli-version` | Checkly CLI npm version. Requires `8.15.0` or newer and defaults to `latest`. Dist-tags, ranges, canaries, and prereleases are assumed compatible. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |
@@ -102,6 +103,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
 | `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
+| `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Defaults to `Checkly`. |
 
 ## Outputs
 
@@ -110,8 +112,16 @@ target URL explicitly through `env` or the workflow `env` block.
 | `test-session-id` | Checkly test session ID, when detected from CLI output. |
 | `test-session-url` | Checkly test session URL, when detected from CLI output. |
 
-## Local test
+## Development
+
+The test harness does not need Checkly or GitHub credentials. It uses a local
+preflight server and a fake CLI process to exercise the complete Action flow.
 
 ```sh
+shellcheck scripts/*.sh
 ./scripts/test.sh
+./scripts/test-integration.sh
 ```
+
+See `AGENTS.md` for the repository invariants, complete verification commands,
+and release guidance.
