@@ -69,3 +69,21 @@ jobs:
           reporting: github-check
           github-check-name: Checkly action contract
           tags: smoke
+
+  ci:
+    name: CI
+    if: always()
+    needs:
+      - harness
+      - composite-action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        env:
+          HARNESS_RESULT: ${{ needs.harness.result }}
+          COMPOSITE_ACTION_RESULT: ${{ needs.composite-action.result }}
+        run: |
+          if [[ "$HARNESS_RESULT" != "success" || "$COMPOSITE_ACTION_RESULT" != "success" ]]; then
+            echo "Required CI failed: harness=$HARNESS_RESULT composite-action=$COMPOSITE_ACTION_RESULT"
+            exit 1
+          fi

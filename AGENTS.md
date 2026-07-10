@@ -53,8 +53,9 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:887a259a5a534f3
 ./scripts/test-integration.sh
 ```
 
-CI runs the harness on Linux and macOS and invokes the composite Action itself
-to catch drift between `action.yml` and `scripts/run.sh`.
+CI runs the harness on Linux and macOS, invokes the composite Action itself to
+catch drift between `action.yml` and `scripts/run.sh`, and exposes the stable
+`CI` aggregator check for branch protection.
 
 When adding behavior, add a failing public-behavior test first, make the minimum
 implementation change, then run the complete verification set. Keep tests
