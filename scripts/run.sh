@@ -81,39 +81,23 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
-cli_version_supports_floor() {
+cli_version_is_supported() {
   local version
   version="$(trim "${1:-}")"
-  local floor_major="$2"
-  local floor_minor="$3"
-  local floor_patch="$4"
 
-  # Only exact pinned stable semver is comparable against a compatibility floor.
+  # Only exact pinned stable semver is comparable against the 8.15.0 floor.
   # Dist-tags, ranges, canaries, and prereleases pass because they may point
   # at compatible builds before a stable release exists.
-  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
     local major="${BASH_REMATCH[1]}"
     local minor="${BASH_REMATCH[2]}"
-    local patch="${BASH_REMATCH[3]}"
 
-    if ((
-      major < floor_major
-      || (major == floor_major && minor < floor_minor)
-      || (major == floor_major && minor == floor_minor && patch < floor_patch)
-    )); then
+    if (( major < 8 || (major == 8 && minor < 15) )); then
       return 1
     fi
   fi
 
   return 0
-}
-
-cli_version_supports_github_report() {
-  cli_version_supports_floor "$1" 8 12 0
-}
-
-cli_version_supports_github_check_name() {
-  cli_version_supports_floor "$1" 8 15 0
 }
 
 # Reasons are interpolated into ::warning:: workflow commands and the step
@@ -415,9 +399,8 @@ case "$reporting" in
     ;;
 esac
 
-if [[ "$reporting" != "github-actions" && -n "$github_check_name" ]] \
-  && ! cli_version_supports_github_check_name "$cli_version"; then
-  echo "::error::Custom GitHub Check names need Checkly CLI 8.15.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.15.0, remove github-check-name, or set reporting: github-actions." >&2
+if ! cli_version_is_supported "$cli_version"; then
+  echo "::error::The Checkly Action needs Checkly CLI 8.15.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.15.0." >&2
   exit 1
 fi
 
@@ -469,31 +452,20 @@ if [[ "$reporting" == "github-actions" ]]; then
   clear_github_report_env
 else
   github_check_requested=true
-  if ! cli_version_supports_github_report "$cli_version"; then
-    github_report_reason="cli_version_too_old"
+  configure_github_report "$github_repository" "$github_sha" "$github_check_name"
+  preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
+  IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
+  github_report_reason="$(sanitize_reason "$github_report_reason")"
+  if [[ "$github_report_available" == "true" ]]; then
+    detach_run=true
+    github_reporter_run=false
+  else
     clear_github_report_env
     if [[ "$reporting" == "github-check" ]]; then
-      echo "::error::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.12.0, or set reporting: github-actions to wait for the result in this workflow." >&2
+      echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}" >&2
       exit 1
     elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      echo "::warning::GitHub Check reporting needs Checkly CLI 8.12.0 or newer (cli-version is '${cli_version}'). Reporting through GitHub Actions instead. Use cli-version: latest or >= 8.12.0 to enable detached GitHub Check reporting."
-    fi
-  else
-    configure_github_report "$github_repository" "$github_sha" "$github_check_name"
-    preflight_result="$(github_report_preflight)" || preflight_result=$'false\tpreflight_crashed'
-    IFS=$'\t' read -r github_report_available github_report_reason <<< "$preflight_result"
-    github_report_reason="$(sanitize_reason "$github_report_reason")"
-    if [[ "$github_report_available" == "true" ]]; then
-      detach_run=true
-      github_reporter_run=false
-    else
-      clear_github_report_env
-      if [[ "$reporting" == "github-check" ]]; then
-        echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}" >&2
-        exit 1
-      elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-        echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}"
-      fi
+      echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}"
     fi
   fi
 fi

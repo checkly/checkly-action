@@ -12,7 +12,7 @@ inputs:
     required: false
     default: test
   cli-version:
-    description: Checkly CLI npm version to run. GitHub Check reporting needs 8.12.0 or newer.
+    description: Checkly CLI npm version to run. Requires 8.15.0 or newer.
     required: false
     default: latest
   working-directory:
@@ -80,7 +80,7 @@ inputs:
     required: false
     default: auto
   github-check-name:
-    description: GitHub Check name to create when reporting through the Checkly GitHub App. Requires Checkly CLI 8.15.0 or newer. Defaults to "Checkly".
+    description: GitHub Check name to create when reporting through the Checkly GitHub App. Defaults to "Checkly".
     required: false
 
 outputs:

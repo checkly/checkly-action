@@ -28,11 +28,9 @@ generated distribution bundle: consumers execute `action.yml` and
   Actions.
 - `reporting: github-check` fails before scheduling checks when writeback is not
   available. `reporting: github-actions` never detaches.
-- Core GitHub Check reporting requires Checkly CLI `8.12.0` or newer.
-- `github-check-name` requires Checkly CLI `8.15.0` or newer. A pinned older
-  stable version must fail rather than silently create the default `Checkly`
-  check and leave a required custom check pending.
-- Exact stable semver pins are compared against compatibility floors. Dist-tags,
+- The Action requires Checkly CLI `8.15.0` or newer. A pinned older stable
+  version must fail before running or performing a preflight request.
+- Exact stable semver pins are compared against the minimum version. Dist-tags,
   ranges, canaries, and prereleases are allowed because they may identify a
   compatible build before the next stable release.
 - Repository and SHA values sent by the Action are hints, not authorization.

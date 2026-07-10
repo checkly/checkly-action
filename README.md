@@ -82,7 +82,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Defaults to `latest`. GitHub Check reporting needs `8.12.0` or newer. Dist-tags, canaries, and prereleases are assumed compatible. |
+| `cli-version` | Checkly CLI npm version. Requires `8.15.0` or newer and defaults to `latest`. Dist-tags, ranges, canaries, and prereleases are assumed compatible. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |
@@ -103,7 +103,7 @@ target URL explicitly through `env` or the workflow `env` block.
 | `fail-on-no-matching` | `trigger` only. Set to `false` to pass `--no-fail-on-no-matching`. |
 | `verbose` | Set to `true` or `false` to pass `--verbose` or `--no-verbose`. |
 | `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
-| `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Requires Checkly CLI `8.15.0` or newer and defaults to `Checkly`. |
+| `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Defaults to `Checkly`. |
 
 ## Outputs
 
