@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CHECKLY_GITHUB_APP_URL="https://github.com/apps/checkly"
+CHECKLY_GITHUB_INTEGRATION_URL="https://app.checklyhq.com/settings/account/integrations"
 
 trim() {
   local value="$1"
@@ -462,10 +462,10 @@ else
   else
     clear_github_report_env
     if [[ "$reporting" == "github-check" ]]; then
-      echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}" >&2
+      echo "::error::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_INTEGRATION_URL}" >&2
       exit 1
     elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_APP_URL}"
+      echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_INTEGRATION_URL}"
     fi
   fi
 fi
@@ -584,7 +584,7 @@ if [[ "$github_check_requested" == "true" && "$github_report_available" == "true
   append_summary "GitHub Check reporting is enabled for this run."
 elif [[ "$github_check_requested" == "true" ]]; then
   append_summary ""
-  append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job reported through GitHub Actions and waited for the Checkly run to finish. [Install the Checkly GitHub App](${CHECKLY_GITHUB_APP_URL}) on this repository to run detached and receive a Checkly GitHub Check."
+  append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job reported through GitHub Actions and waited for the Checkly run to finish. [Install the Checkly GitHub App](${CHECKLY_GITHUB_INTEGRATION_URL}) on this repository to run detached and receive a Checkly GitHub Check."
 fi
 
 rm -f "$output_file"
