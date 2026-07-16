@@ -35,8 +35,15 @@ INSTALL_MARKER="$TEST_DIR/installed"
 OUTPUT_FILE="$TEST_DIR/github-output"
 SUMMARY_FILE="$TEST_DIR/github-summary"
 
-mkdir -p "$FAKE_BIN" "$PROJECT_DIR"
+mkdir -p "$FAKE_BIN" "$PROJECT_DIR/node_modules/checkly"
 touch "$OUTPUT_FILE" "$SUMMARY_FILE"
+
+cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
+{
+  "name": "checkly",
+  "version": "8.15.0"
+}
+JSON
 
 cat > "$FAKE_BIN/npx" <<'FAKE_NPX'
 #!/usr/bin/env bash
@@ -80,7 +87,7 @@ CHECKLY_ACCOUNT_ID=account-1 \
 GITHUB_OUTPUT="$OUTPUT_FILE" \
 GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
 GITHUB_REPOSITORY=checkly/checkly-action \
-GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 \
+GITHUB_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 GITHUB_RUN_ID=123456 \
 GITHUB_RUN_ATTEMPT=2 \
 GITHUB_WORKFLOW=Test \
@@ -95,6 +102,7 @@ INPUT_COMMAND=test \
 INPUT_CLI_VERSION=8.15.0 \
 INPUT_REPORTING=github-check \
 INPUT_GITHUB_CHECK_NAME='Checkly action integration' \
+INPUT_GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 \
 INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
 INPUT_INSTALL_COMMAND="$install_command" \
 INPUT_TAGS='smoke' \
@@ -102,8 +110,8 @@ INPUT_TAGS='smoke' \
 
 [[ "$(cat "$CWD_FILE")" == "$PROJECT_DIR" ]]
 [[ "$(cat "$INSTALL_MARKER")" == "installed" ]]
-assert_file_contains "$ARGS_FILE" "--yes"
-assert_file_contains "$ARGS_FILE" "checkly@8.15.0"
+assert_file_contains "$ARGS_FILE" "--no-install"
+assert_file_contains "$ARGS_FILE" "checkly"
 assert_file_contains "$ARGS_FILE" "test"
 assert_file_contains "$ARGS_FILE" "--detach"
 assert_file_contains "$ARGS_FILE" "--tags"
@@ -133,6 +141,63 @@ assert.equal(request.body.workflow, 'Test')
 assert.equal(request.body.job, 'integration')
 assert.equal(request.body.eventName, 'push')
 NODE
+
+cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
+{
+  "name": "checkly",
+  "version": "8.14.1"
+}
+JSON
+
+set +e
+incompatible_local_cli_output="$(
+  PATH="$FAKE_BIN:$PATH" \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.15.0 \
+  INPUT_REPORTING=github-actions \
+  INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
+  "$ROOT_DIR/scripts/run.sh" 2>&1
+)"
+status="$?"
+set -e
+
+if [[ "$status" -eq 0 ]]; then
+  echo "Expected incompatible project-local CLI to fail." >&2
+  exit 1
+fi
+assert_file_contains <(printf '%s\n' "$incompatible_local_cli_output") "Project-local Checkly CLI 8.14.1 is older than the required 8.15.0"
+
+cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
+{
+  "name": "checkly",
+  "version": "8.16.0"
+}
+JSON
+
+set +e
+mismatched_local_cli_output="$(
+  PATH="$FAKE_BIN:$PATH" \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.15.0 \
+  INPUT_REPORTING=github-actions \
+  INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
+  "$ROOT_DIR/scripts/run.sh" 2>&1
+)"
+status="$?"
+set -e
+
+if [[ "$status" -eq 0 ]]; then
+  echo "Expected mismatched project-local CLI to fail." >&2
+  exit 1
+fi
+assert_file_contains <(printf '%s\n' "$mismatched_local_cli_output") "Project-local Checkly CLI 8.16.0 does not match cli-version '8.15.0'"
+
+cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
+{
+  "name": "checkly",
+  "version": "8.15.0"
+}
+JSON
 
 set +e
 PATH="$FAKE_BIN:$PATH" \

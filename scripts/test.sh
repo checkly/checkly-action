@@ -161,6 +161,19 @@ github_report_output="$(
 assert_contains "$github_report_output" "Reporting: GitHub Check \"Checkly PR code checks\" for checkly/playwright-reporter-demo@head123def456"
 assert_contains "$github_report_output" "GitHub metadata: source=checkly-action pullRequestNumber=5 environmentUrl=https://preview.example.com"
 
+dispatch_report_output="$(
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-check \
+  INPUT_GITHUB_SHA=deployed123def456 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  GITHUB_REPOSITORY=checkly/monorepo \
+  GITHUB_SHA=defaultbranch123def456 \
+  GITHUB_EVENT_NAME=repository_dispatch \
+  run_dry
+)"
+
+assert_contains "$dispatch_report_output" "Reporting: GitHub Check for checkly/monorepo@deployed123def456"
+
 github_actions_output="$(
   INPUT_COMMAND=test \
   INPUT_CLI_VERSION=8.15.0 \

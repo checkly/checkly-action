@@ -12,7 +12,7 @@ inputs:
     required: false
     default: test
   cli-version:
-    description: Checkly CLI npm version to run. Requires 8.15.0 or newer.
+    description: Checkly CLI npm version. Projects that install checkly run their local CLI; exact stable pins must match it. Requires 8.15.0 or newer.
     required: false
     default: latest
   working-directory:
@@ -82,6 +82,9 @@ inputs:
   github-check-name:
     description: GitHub Check name to create when reporting through the Checkly GitHub App. Defaults to "Checkly".
     required: false
+  github-sha:
+    description: Commit SHA that receives the GitHub Check. Overrides the SHA inferred from the GitHub event.
+    required: false
 
 outputs:
   test-session-id:
@@ -121,3 +124,4 @@ runs:
         INPUT_VERBOSE: ${{ inputs.verbose }}
         INPUT_REPORTING: ${{ inputs.reporting }}
         INPUT_GITHUB_CHECK_NAME: ${{ inputs.github-check-name }}
+        INPUT_GITHUB_SHA: ${{ inputs.github-sha }}

@@ -100,6 +100,47 @@ cli_version_is_supported() {
   return 0
 }
 
+cli_version_matches_requested() {
+  local requested
+  requested="$(trim "${1:-}")"
+  local resolved
+  resolved="$(trim "${2:-}")"
+
+  # An exact stable pin is meaningful only when the project resolves the same
+  # version. Dist-tags, ranges, canaries, and prereleases intentionally remain
+  # flexible so users can test unpublished or upcoming CLI builds.
+  if [[ "$requested" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    [[ "${requested#v}" == "$resolved" ]]
+    return
+  fi
+
+  return 0
+}
+
+resolve_local_checkly_version() {
+  local directory="$1"
+
+  if ! command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+
+  node - "$directory" <<'NODE'
+const fs = require('fs')
+
+try {
+  const packagePath = require.resolve('checkly/package.json', {
+    paths: [process.argv[2]],
+  })
+  const { version } = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+  if (typeof version === 'string' && version.trim() !== '') {
+    process.stdout.write(version.trim())
+  }
+} catch (_) {
+  process.exit(0)
+}
+NODE
+}
+
 # Reasons are interpolated into ::warning:: workflow commands and the step
 # summary; constrain them to a safe charset so a malformed or hostile
 # preflight response can never inject workflow commands or extra lines.
@@ -175,8 +216,9 @@ resolve_github_repository() {
 }
 
 resolve_github_sha() {
-  local sha=""
-  if is_pull_request_event; then
+  local sha
+  sha="$(trim "${INPUT_GITHUB_SHA:-}")"
+  if [[ -z "$sha" ]] && is_pull_request_event; then
     sha="$(github_event_value "pull_request.head.sha")"
   fi
   printf '%s' "${sha:-${GITHUB_SHA:-}}"
@@ -377,7 +419,8 @@ NODE
 }
 
 command_name="$(trim "${INPUT_COMMAND:-test}")"
-cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
+requested_cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
+cli_version="$requested_cli_version"
 working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
 install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 reporting="$(trim "${INPUT_REPORTING:-auto}")"
@@ -399,8 +442,8 @@ case "$reporting" in
     ;;
 esac
 
-if ! cli_version_is_supported "$cli_version"; then
-  echo "::error::The Checkly Action needs Checkly CLI 8.15.0 or newer (cli-version is '${cli_version}'). Use cli-version: latest or >= 8.15.0." >&2
+if ! cli_version_is_supported "$requested_cli_version"; then
+  echo "::error::The Checkly Action needs Checkly CLI 8.15.0 or newer (cli-version is '${requested_cli_version}'). Use cli-version: latest or >= 8.15.0." >&2
   exit 1
 fi
 
@@ -442,6 +485,33 @@ github_sha="$(resolve_github_sha)"
 configure_generic_repo_env "$github_repository" "$github_sha"
 configure_deployment_environment_url
 
+checkly_executable=(npx --yes "checkly@${cli_version}")
+
+if [[ "${CHECKLY_ACTION_DRY_RUN:-}" != "1" && "${CHECKLY_ACTION_DRY_RUN:-}" != "true" ]]; then
+  cd "$working_directory"
+
+  if [[ -n "$install_command" ]]; then
+    echo "Running install command: ${install_command}"
+    bash -euo pipefail -c "$install_command"
+  fi
+
+  local_cli_version="$(resolve_local_checkly_version "$PWD")"
+  if [[ -n "$local_cli_version" ]]; then
+    if ! cli_version_is_supported "$local_cli_version"; then
+      echo "::error::Project-local Checkly CLI ${local_cli_version} is older than the required 8.15.0. Update the project's checkly dependency before using this Action." >&2
+      exit 1
+    fi
+
+    if ! cli_version_matches_requested "$requested_cli_version" "$local_cli_version"; then
+      echo "::error::Project-local Checkly CLI ${local_cli_version} does not match cli-version '${requested_cli_version}'. Update the project's checkly dependency or use the matching cli-version input." >&2
+      exit 1
+    fi
+
+    cli_version="$local_cli_version"
+    checkly_executable=(npx --no-install checkly)
+  fi
+fi
+
 github_check_requested=false
 github_report_available=false
 github_report_reason="disabled"
@@ -470,7 +540,7 @@ else
   fi
 fi
 
-checkly_command=(npx --yes "checkly@${cli_version}" "$command_name")
+checkly_command=("${checkly_executable[@]}" "$command_name")
 if [[ "$detach_run" == "true" ]]; then
   checkly_command+=("--detach")
 elif [[ "$github_reporter_run" == "true" ]]; then
@@ -534,13 +604,6 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
     printf 'Reporting: GitHub Actions\n'
   fi
   exit 0
-fi
-
-cd "$working_directory"
-
-if [[ -n "$install_command" ]]; then
-  echo "Running install command: ${install_command}"
-  bash -euo pipefail -c "$install_command"
 fi
 
 output_file="$(mktemp)"
