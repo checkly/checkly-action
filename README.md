@@ -32,7 +32,7 @@ jobs:
           github-check-name: Checkly PR code checks
         env:
           CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
-          CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
+          CHECKLY_ACCOUNT_ID: ${{ vars.CHECKLY_ACCOUNT_ID }}
 ```
 
 Trigger deployed checks from Checkly:
@@ -45,7 +45,7 @@ Trigger deployed checks from Checkly:
     check-id: abc123,def456
   env:
     CHECKLY_API_KEY: ${{ secrets.CHECKLY_API_KEY }}
-    CHECKLY_ACCOUNT_ID: ${{ secrets.CHECKLY_ACCOUNT_ID }}
+    CHECKLY_ACCOUNT_ID: ${{ vars.CHECKLY_ACCOUNT_ID }}
 ```
 
 Use multiple `--tags` filters by putting one filter per line:
