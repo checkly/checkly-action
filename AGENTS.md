@@ -35,6 +35,10 @@ generated distribution bundle: consumers execute `action.yml` and
   compatible build before the next stable release.
 - Repository and SHA values sent by the Action are hints, not authorization.
   The Checkly backend must continue verifying account-scoped GitHub App access.
+- `github-sha` explicitly overrides event-derived SHA metadata for dispatch and
+  deployment workflows. Documentation must keep the checkout and reporting SHA
+  aligned so a GitHub Check never describes a different revision than the one
+  tested.
 - Never print API keys or other secrets. Sanitize backend-provided values before
   placing them in GitHub workflow commands or summaries.
 

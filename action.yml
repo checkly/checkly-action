@@ -82,6 +82,9 @@ inputs:
   github-check-name:
     description: GitHub Check name to create when reporting through the Checkly GitHub App. Defaults to "Checkly".
     required: false
+  github-sha:
+    description: Commit SHA that receives the GitHub Check. Overrides the SHA inferred from the GitHub event.
+    required: false
 
 outputs:
   test-session-id:
@@ -121,3 +124,4 @@ runs:
         INPUT_VERBOSE: ${{ inputs.verbose }}
         INPUT_REPORTING: ${{ inputs.reporting }}
         INPUT_GITHUB_CHECK_NAME: ${{ inputs.github-check-name }}
+        INPUT_GITHUB_SHA: ${{ inputs.github-sha }}

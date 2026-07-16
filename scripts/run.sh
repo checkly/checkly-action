@@ -175,8 +175,9 @@ resolve_github_repository() {
 }
 
 resolve_github_sha() {
-  local sha=""
-  if is_pull_request_event; then
+  local sha
+  sha="$(trim "${INPUT_GITHUB_SHA:-}")"
+  if [[ -z "$sha" ]] && is_pull_request_event; then
     sha="$(github_event_value "pull_request.head.sha")"
   fi
   printf '%s' "${sha:-${GITHUB_SHA:-}}"
