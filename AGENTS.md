@@ -30,6 +30,9 @@ generated distribution bundle: consumers execute `action.yml` and
   available. `reporting: github-actions` never detaches.
 - The Action requires Checkly CLI `8.15.0` or newer. A pinned older stable
   version must fail before running or performing a preflight request.
+- When the project installs `checkly`, run that local CLI after its dependency
+  installation so config constructs and the CLI share one module session. An
+  exact stable `cli-version` input must match the local package version.
 - Exact stable semver pins are compared against the minimum version. Dist-tags,
   ranges, canaries, and prereleases are allowed because they may identify a
   compatible build before the next stable release.

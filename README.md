@@ -73,6 +73,19 @@ Install the [Checkly GitHub App](https://app.checklyhq.com/settings/account/inte
 from your Checkly account integrations and grant it access to the repository to
 use detached GitHub Check reporting.
 
+### CLI resolution
+
+Checkly config files import constructs from the `checkly` package. When the
+working directory has `checkly` installed, this action runs that local CLI after
+`install-command` completes so the CLI and constructs share the same module
+session. Keep that project dependency at `8.15.0` or newer for GitHub Check
+reporting.
+
+An exact stable `cli-version` pin must match the installed project version. For
+example, a project with `checkly@8.15.0` should use `cli-version: 8.15.0`. The
+action falls back to `npx checkly@<cli-version>` only when the project does not
+install Checkly itself.
+
 For `deployment_status` workflows, the action exposes
 `github.event.deployment_status.environment_url` as `ENVIRONMENT_URL` when that
 environment variable is not already set. For pull request preview URLs, pass the
@@ -126,7 +139,7 @@ with that commit and selects where the GitHub Check is reported.
 | Input | Description |
 | --- | --- |
 | `command` | `test` for local constructs or `trigger` for deployed checks. Defaults to `test`. |
-| `cli-version` | Checkly CLI npm version. Requires `8.15.0` or newer and defaults to `latest`. Dist-tags, ranges, canaries, and prereleases are assumed compatible. |
+| `cli-version` | Checkly CLI version. Requires `8.15.0` or newer and defaults to `latest`. When the project installs `checkly`, the local CLI runs instead; exact stable pins must match it. Dist-tags, ranges, canaries, and prereleases are assumed compatible. |
 | `working-directory` | Directory where the CLI command should run. Defaults to `.`. |
 | `install-command` | Optional command to run before the Checkly CLI command, inside `working-directory`. |
 | `tags` | One `--tags` filter per line. Each line can contain comma-separated tags. |

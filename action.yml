@@ -12,7 +12,7 @@ inputs:
     required: false
     default: test
   cli-version:
-    description: Checkly CLI npm version to run. Requires 8.15.0 or newer.
+    description: Checkly CLI npm version. Projects that install checkly run their local CLI; exact stable pins must match it. Requires 8.15.0 or newer.
     required: false
     default: latest
   working-directory:
