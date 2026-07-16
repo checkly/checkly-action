@@ -69,8 +69,9 @@ The `reporting` input controls where the Checkly result is reported:
 - `github-actions`: always wait in the GitHub Actions job and report through the
   CLI GitHub reporter and step summary.
 
-Install the [Checkly GitHub App](https://github.com/apps/checkly) on the
-repository to use detached GitHub Check reporting.
+Install the [Checkly GitHub App](https://app.checklyhq.com/settings/account/integrations)
+from your Checkly account integrations and grant it access to the repository to
+use detached GitHub Check reporting.
 
 For `deployment_status` workflows, the action exposes
 `github.event.deployment_status.environment_url` as `ENVIRONMENT_URL` when that

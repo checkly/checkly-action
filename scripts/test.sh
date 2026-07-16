@@ -88,7 +88,7 @@ fallback_command_output="$(
 
 assert_contains "$fallback_command_output" "checkly@8.15.0 test --reporter=github"
 assert_contains "$fallback_command_output" "Reporting: GitHub Actions (GitHub Check unavailable: github_app_not_connected)"
-assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: https://github.com/apps/checkly"
+assert_contains "$fallback_command_output" "Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: https://app.checklyhq.com/settings/account/integrations"
 
 assert_fails_with "Unsupported reporting 'banana'" env \
   INPUT_COMMAND=test \
