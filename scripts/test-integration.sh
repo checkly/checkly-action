@@ -41,7 +41,10 @@ touch "$OUTPUT_FILE" "$SUMMARY_FILE"
 cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
 {
   "name": "checkly",
-  "version": "8.15.0"
+  "version": "8.15.0",
+  "exports": {
+    ".": "./dist/index.js"
+  }
 }
 JSON
 
@@ -145,7 +148,10 @@ NODE
 cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
 {
   "name": "checkly",
-  "version": "8.14.1"
+  "version": "8.14.1",
+  "exports": {
+    ".": "./dist/index.js"
+  }
 }
 JSON
 
@@ -170,7 +176,10 @@ assert_file_contains <(printf '%s\n' "$incompatible_local_cli_output") "Project-
 cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
 {
   "name": "checkly",
-  "version": "8.16.0"
+  "version": "8.16.0",
+  "exports": {
+    ".": "./dist/index.js"
+  }
 }
 JSON
 
@@ -195,7 +204,10 @@ assert_file_contains <(printf '%s\n' "$mismatched_local_cli_output") "Project-lo
 cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
 {
   "name": "checkly",
-  "version": "8.15.0"
+  "version": "8.15.0",
+  "exports": {
+    ".": "./dist/index.js"
+  }
 }
 JSON
 
