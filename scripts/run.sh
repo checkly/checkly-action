@@ -126,14 +126,27 @@ resolve_local_checkly_version() {
 
   node - "$directory" <<'NODE'
 const fs = require('fs')
+const path = require('path')
 
+// Walk up the node_modules directories Node would search instead of resolving
+// 'checkly/package.json': checkly 9 has an "exports" map that does not expose
+// that subpath.
 try {
-  const packagePath = require.resolve('checkly/package.json', {
-    paths: [process.argv[2]],
-  })
-  const { version } = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
-  if (typeof version === 'string' && version.trim() !== '') {
-    process.stdout.write(version.trim())
+  let directory = path.resolve(process.argv[2])
+  while (true) {
+    const packagePath = path.join(directory, 'node_modules', 'checkly', 'package.json')
+    if (fs.existsSync(packagePath)) {
+      const { version } = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+      if (typeof version === 'string' && version.trim() !== '') {
+        process.stdout.write(version.trim())
+      }
+      break
+    }
+    const parent = path.dirname(directory)
+    if (parent === directory) {
+      break
+    }
+    directory = parent
   }
 } catch (_) {
   process.exit(0)
