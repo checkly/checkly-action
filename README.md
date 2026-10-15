@@ -69,6 +69,10 @@ The `reporting` input controls where the Checkly result is reported:
 - `github-actions`: always wait in the GitHub Actions job and report through the
   CLI GitHub reporter and step summary.
 
+Cancelling a job that waits also cancels its Checkly test session. This covers
+runs superseded through `concurrency` with `cancel-in-progress`. A detached run
+keeps running in Checkly after its job ends.
+
 Install the [Checkly GitHub App](https://app.checklyhq.com/settings/account/integrations)
 from your Checkly account integrations and grant it access to the repository to
 use detached GitHub Check reporting.

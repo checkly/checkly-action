@@ -4,8 +4,12 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d)"
 SERVER_PID=""
+CLI_PID_FILE="$TEST_DIR/cli-pid"
 
 cleanup() {
+  if [[ -s "$CLI_PID_FILE" ]]; then
+    kill -s KILL "$(cat "$CLI_PID_FILE")" 2>/dev/null || true
+  fi
   if [[ -n "$SERVER_PID" ]]; then
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -228,5 +232,67 @@ if [[ "$status" -ne 17 ]]; then
   echo "Expected the CLI exit code 17 to propagate, got $status." >&2
   exit 1
 fi
+
+SIGNAL_BIN="$TEST_DIR/signal-bin"
+SIGNAL_FILE="$TEST_DIR/cli-signal"
+STEP_SCRIPT="$TEST_DIR/step.sh"
+STEP_LOG="$TEST_DIR/step-log"
+mkdir -p "$SIGNAL_BIN"
+
+# A Node script like the real npx. A bash fake started in the background would
+# inherit SIGINT as ignored and could not trap it.
+cat > "$SIGNAL_BIN/npx" <<'FAKE_NPX'
+#!/usr/bin/env node
+const fs = require('node:fs')
+
+console.log('Test session ID: test-session-cancelled')
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    fs.writeFileSync(process.env.FAKE_NPX_SIGNAL_FILE, signal)
+    console.log(`Received ${signal}`)
+    setTimeout(() => process.exit(signal === 'SIGINT' ? 130 : 143), 200)
+  })
+}
+fs.writeFileSync(process.env.FAKE_NPX_PID_FILE, String(process.pid))
+setInterval(() => {}, 1000)
+FAKE_NPX
+chmod +x "$SIGNAL_BIN/npx"
+
+# The runner substitutes the composite step's run line into a script and runs
+# it with bash -e.
+sed -nE 's/^[[:space:]]+run:[[:space:]]+//p' "$ROOT_DIR/action.yml" \
+  | sed "s|\${{ github.action_path }}|$ROOT_DIR|g" > "$STEP_SCRIPT"
+
+for signal in SIGINT SIGTERM; do
+  rm -f "$SIGNAL_FILE" "$CLI_PID_FILE"
+  : > "$OUTPUT_FILE"
+
+  cancel_result="$(
+    PATH="$SIGNAL_BIN:$PATH" \
+    FAKE_NPX_SIGNAL_FILE="$SIGNAL_FILE" \
+    FAKE_NPX_PID_FILE="$CLI_PID_FILE" \
+    GITHUB_OUTPUT="$OUTPUT_FILE" \
+    GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
+    INPUT_COMMAND=test \
+    INPUT_CLI_VERSION=8.15.0 \
+    INPUT_REPORTING=github-actions \
+    INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
+    node "$ROOT_DIR/scripts/test-step-cancel.cjs" "$STEP_SCRIPT" "$STEP_LOG" "$CLI_PID_FILE" "$signal"
+  )"
+
+  expected_exit=143
+  if [[ "$signal" == "SIGINT" ]]; then
+    expected_exit=130
+  fi
+  if [[ "$cancel_result" != "sent=${signal} exit=${expected_exit}" ]]; then
+    echo "Expected the step to exit ${expected_exit} after ${signal} alone, got: ${cancel_result}" >&2
+    cat "$STEP_LOG" >&2
+    exit 1
+  fi
+  [[ "$(cat "$SIGNAL_FILE")" == "$signal" ]]
+  assert_file_contains "$STEP_LOG" "Received ${signal}"
+  assert_file_contains "$OUTPUT_FILE" "test-session-id=test-session-cancelled"
+done
+rm -f "$CLI_PID_FILE"
 
 echo "All integration tests passed."

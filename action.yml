@@ -99,7 +99,7 @@ runs:
   steps:
     - id: run-checkly
       shell: bash
-      run: ${{ github.action_path }}/scripts/run.sh
+      run: exec "${{ github.action_path }}/scripts/run.sh"
       env:
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_CLI_VERSION: ${{ inputs.cli-version }}
