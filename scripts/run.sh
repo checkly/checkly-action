@@ -629,10 +629,10 @@ tee_pid="$!"
 cli_pid="$!"
 
 # A cancelled job signals only this process. The CLI cancels its test session
-# on SIGINT.
+# on SIGINT. Both signals reach it as SIGINT. A step that starts with SIGINT
+# ignored sees only the SIGTERM that follows 7.5 seconds later.
 cli_signaled=false
-trap 'cli_signaled=true; kill -s INT "$cli_pid" 2>/dev/null || true' INT
-trap 'cli_signaled=true; kill -s TERM "$cli_pid" 2>/dev/null || true' TERM
+trap 'cli_signaled=true; kill -s INT "$cli_pid" 2>/dev/null || true' INT TERM
 
 # A trapped signal makes wait return before the CLI has exited.
 while true; do

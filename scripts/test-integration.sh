@@ -263,7 +263,13 @@ chmod +x "$SIGNAL_BIN/npx"
 sed -nE 's/^[[:space:]]+run:[[:space:]]+//p' "$ROOT_DIR/action.yml" \
   | sed "s|\${{ github.action_path }}|$ROOT_DIR|g" > "$STEP_SCRIPT"
 
-for signal in SIGINT SIGTERM; do
+# A step that starts with SIGINT ignored cannot trap it. It sees only the
+# SIGTERM that follows.
+IGNORED_STEP_SCRIPT="$TEST_DIR/step-sigint-ignored.sh"
+{ printf "trap '' INT\n"; cat "$STEP_SCRIPT"; } > "$IGNORED_STEP_SCRIPT"
+
+# Whichever signal the step sees, the CLI gets SIGINT and cancels its session.
+while IFS='|' read -r script first_signal expected_signals; do
   rm -f "$SIGNAL_FILE" "$CLI_PID_FILE"
   : > "$OUTPUT_FILE"
 
@@ -277,22 +283,22 @@ for signal in SIGINT SIGTERM; do
     INPUT_CLI_VERSION=8.15.0 \
     INPUT_REPORTING=github-actions \
     INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
-    node "$ROOT_DIR/scripts/test-step-cancel.cjs" "$STEP_SCRIPT" "$STEP_LOG" "$CLI_PID_FILE" "$signal"
+    node "$ROOT_DIR/scripts/test-step-cancel.cjs" "$script" "$STEP_LOG" "$CLI_PID_FILE" "$first_signal"
   )"
 
-  expected_exit=143
-  if [[ "$signal" == "SIGINT" ]]; then
-    expected_exit=130
-  fi
-  if [[ "$cancel_result" != "sent=${signal} exit=${expected_exit}" ]]; then
-    echo "Expected the step to exit ${expected_exit} after ${signal} alone, got: ${cancel_result}" >&2
+  if [[ "$cancel_result" != "sent=${expected_signals} exit=130" ]]; then
+    echo "Expected sent=${expected_signals} exit=130 for $(basename "$script"), got: ${cancel_result}" >&2
     cat "$STEP_LOG" >&2
     exit 1
   fi
-  [[ "$(cat "$SIGNAL_FILE")" == "$signal" ]]
-  assert_file_contains "$STEP_LOG" "Received ${signal}"
+  [[ "$(cat "$SIGNAL_FILE")" == "SIGINT" ]]
+  assert_file_contains "$STEP_LOG" "Received SIGINT"
   assert_file_contains "$OUTPUT_FILE" "test-session-id=test-session-cancelled"
-done
+done <<CASES
+$STEP_SCRIPT|SIGINT|SIGINT
+$STEP_SCRIPT|SIGTERM|SIGTERM
+$IGNORED_STEP_SCRIPT|SIGINT|SIGINT,SIGTERM
+CASES
 rm -f "$CLI_PID_FILE"
 
 echo "All integration tests passed."
