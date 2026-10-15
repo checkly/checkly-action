@@ -625,14 +625,18 @@ mkfifo "$output_dir/fifo"
 tee "$output_file" < "$output_dir/fifo" &
 tee_pid="$!"
 
-"${checkly_command[@]}" > "$output_dir/fifo" 2>&1 &
+# npx runs the CLI through `sh -c`. Where sh is dash, that shell stays between
+# npx and the CLI and does not pass signals on. The CLI therefore runs in its
+# own process group. Signals go to the whole group.
+perl -e 'setpgrp(0, 0); exec { $ARGV[0] } @ARGV or die "Cannot run $ARGV[0]: $!\n"' -- \
+  "${checkly_command[@]}" > "$output_dir/fifo" 2>&1 &
 cli_pid="$!"
 
 # A cancelled job signals only this process. The CLI cancels its test session
 # on SIGINT. Both signals reach it as SIGINT. A step that starts with SIGINT
 # ignored sees only the SIGTERM that follows 7.5 seconds later.
 cli_signaled=false
-trap 'cli_signaled=true; kill -s INT "$cli_pid" 2>/dev/null || true' INT TERM
+trap 'cli_signaled=true; kill -s INT -- "-$cli_pid" 2>/dev/null || kill -s INT "$cli_pid" 2>/dev/null || true' INT TERM
 
 # A trapped signal makes wait return before the CLI has exited.
 while true; do

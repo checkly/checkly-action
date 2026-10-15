@@ -239,9 +239,7 @@ STEP_SCRIPT="$TEST_DIR/step.sh"
 STEP_LOG="$TEST_DIR/step-log"
 mkdir -p "$SIGNAL_BIN"
 
-# A Node script like the real npx. A bash fake started in the background would
-# inherit SIGINT as ignored and could not trap it.
-cat > "$SIGNAL_BIN/npx" <<'FAKE_NPX'
+cat > "$SIGNAL_BIN/fake-checkly" <<'FAKE_CLI'
 #!/usr/bin/env node
 const fs = require('node:fs')
 
@@ -255,6 +253,22 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 fs.writeFileSync(process.env.FAKE_NPX_PID_FILE, String(process.pid))
 setInterval(() => {}, 1000)
+FAKE_CLI
+chmod +x "$SIGNAL_BIN/fake-checkly"
+
+# Like npm, the fake npx runs the CLI through `sh -c` and forwards signals to
+# that shell only. Where sh is dash, the shell stays between npx and the CLI
+# and does not pass signals on. The trailing exit keeps it there on any sh.
+cat > "$SIGNAL_BIN/npx" <<'FAKE_NPX'
+#!/usr/bin/env node
+const { spawn } = require('node:child_process')
+const { constants } = require('node:os')
+
+const shell = spawn('sh', ['-c', `"${process.env.FAKE_CLI}"; exit $?`], { stdio: 'inherit' })
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => shell.kill(signal))
+}
+shell.on('exit', (code, signal) => process.exit(code ?? 128 + constants.signals[signal]))
 FAKE_NPX
 chmod +x "$SIGNAL_BIN/npx"
 
@@ -275,6 +289,7 @@ while IFS='|' read -r script first_signal expected_signals; do
 
   cancel_result="$(
     PATH="$SIGNAL_BIN:$PATH" \
+    FAKE_CLI="$SIGNAL_BIN/fake-checkly" \
     FAKE_NPX_SIGNAL_FILE="$SIGNAL_FILE" \
     FAKE_NPX_PID_FILE="$CLI_PID_FILE" \
     GITHUB_OUTPUT="$OUTPUT_FILE" \
