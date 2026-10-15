@@ -14,8 +14,9 @@ generated distribution bundle: consumers execute `action.yml` and
 - `scripts/test.sh` covers validation and command construction through the
   script's public environment-variable interface.
 - `scripts/test-integration.sh` covers the real preflight, CLI invocation,
-  working directory, install command, outputs, summaries, and exit codes using
-  local fakes. It must never require Checkly or GitHub credentials.
+  working directory, install command, outputs, summaries, exit codes, and job
+  cancellation using local fakes. It must never require Checkly or GitHub
+  credentials.
 
 ## Product Invariants
 
@@ -51,7 +52,7 @@ Run all of these before pushing:
 
 ```bash
 bash -n scripts/*.sh
-node --check scripts/test-preflight-server.cjs
+node --check scripts/*.cjs
 shellcheck scripts/*.sh
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
 ./scripts/test.sh

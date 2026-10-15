@@ -619,11 +619,32 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
   exit 0
 fi
 
-output_file="$(mktemp)"
-set +e
-"${checkly_command[@]}" 2>&1 | tee "$output_file"
-status="${PIPESTATUS[0]}"
-set -e
+output_dir="$(mktemp -d)"
+output_file="$output_dir/output"
+mkfifo "$output_dir/fifo"
+tee "$output_file" < "$output_dir/fifo" &
+tee_pid="$!"
+
+"${checkly_command[@]}" > "$output_dir/fifo" 2>&1 &
+cli_pid="$!"
+
+# A cancelled job signals only this process. The CLI cancels its test session
+# on SIGINT.
+cli_signaled=false
+trap 'cli_signaled=true; kill -s INT "$cli_pid" 2>/dev/null || true' INT
+trap 'cli_signaled=true; kill -s TERM "$cli_pid" 2>/dev/null || true' TERM
+
+# A trapped signal makes wait return before the CLI has exited.
+while true; do
+  cli_signaled=false
+  status=0
+  wait "$cli_pid" || status="$?"
+  if [[ "$cli_signaled" != "true" ]]; then
+    break
+  fi
+done
+trap - INT TERM
+wait "$tee_pid" || true
 
 plain_output="$(perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g' "$output_file")"
 test_session_id="$(printf '%s\n' "$plain_output" | sed -nE 's/.*Test session ID:[[:space:]]*([A-Za-z0-9_-]+).*/\1/p' | tail -n 1)"
@@ -663,5 +684,5 @@ elif [[ "$github_check_requested" == "true" ]]; then
   append_summary "GitHub Check reporting was unavailable (${github_report_reason}). This job reported through GitHub Actions and waited for the Checkly run to finish. [Install the Checkly GitHub App](${CHECKLY_GITHUB_INTEGRATION_URL}) on this repository to run detached and receive a Checkly GitHub Check."
 fi
 
-rm -f "$output_file"
+rm -rf "$output_dir"
 exit "$status"

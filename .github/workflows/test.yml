@@ -34,7 +34,7 @@ jobs:
       - name: Validate syntax
         run: |
           bash -n scripts/*.sh
-          node --check scripts/test-preflight-server.cjs
+          node --check scripts/*.cjs
 
       - name: Run ShellCheck
         if: runner.os == 'Linux'
