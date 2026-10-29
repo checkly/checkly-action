@@ -18,6 +18,17 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local output="$1"
+  local unexpected="$2"
+  if [[ "$output" == *"$unexpected"* ]]; then
+    echo "Expected output not to contain: $unexpected" >&2
+    echo "Actual output:" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+}
+
 assert_fails_with() {
   local expected="$1"
   shift
@@ -208,5 +219,100 @@ deployment_url_output="$(
 )"
 
 assert_contains "$deployment_url_output" "Environment URL: https://preview.example.com"
+
+rerun_output="$(
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-check \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  INPUT_GITHUB_JOB_ID=123407491960 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  run_dry
+)"
+
+assert_contains "$rerun_output" "checkly@latest test --detach"
+assert_contains "$rerun_output" "Re-run: repository_dispatch (job 123407491960)"
+
+assert_fails_with "::error::Input 'github-check-rerun' needs the ID of the job that runs this step. Set github-job-id: \${{ job.check_run_id }}." env \
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-check \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
+assert_fails_with "::error::Input 'github-job-id' must be a numeric job ID, got '12;34'." env \
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  INPUT_GITHUB_JOB_ID='12;34' \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  CHECKLY_ACTION_DRY_RUN=1 \
+  "$ROOT_DIR/scripts/run.sh"
+
+rerun_github_actions_output="$(
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-actions \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  run_dry
+)"
+
+assert_contains "$rerun_github_actions_output" "::warning::Input 'github-check-rerun' is ignored with reporting: github-actions."
+assert_contains "$rerun_github_actions_output" "Reporting: GitHub Actions"
+assert_not_contains "$rerun_github_actions_output" "Re-run:"
+
+rerun_fallback_output="$(
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=false \
+  CHECKLY_ACTION_GITHUB_REPORT_REASON=github_app_not_connected \
+  run_dry
+)"
+
+assert_contains "$rerun_fallback_output" "Reporting: GitHub Actions (GitHub Check unavailable: github_app_not_connected)"
+assert_not_contains "$rerun_fallback_output" "Re-run:"
+
+rerun_disabled_output="$(
+  INPUT_COMMAND=test \
+  INPUT_GITHUB_CHECK_RERUN=false \
+  INPUT_GITHUB_JOB_ID=123407491960 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  run_dry
+)"
+
+assert_not_contains "$rerun_disabled_output" "Re-run:"
+
+cancel_superseded_output="$(
+  INPUT_COMMAND=test \
+  INPUT_CANCEL_SUPERSEDED=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
+  GITHUB_EVENT_NAME=pull_request \
+  GITHUB_EVENT_PATH="$github_event_path" \
+  run_dry
+)"
+
+assert_contains "$cancel_superseded_output" "Cancel superseded: pull request 5"
+
+cancel_superseded_push_output="$(
+  INPUT_COMMAND=test \
+  INPUT_CANCEL_SUPERSEDED=true \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+  GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
+  GITHUB_EVENT_NAME=push \
+  run_dry
+)"
+
+assert_not_contains "$cancel_superseded_push_output" "Cancel superseded:"
+
+cancel_superseded_waiting_output="$(
+  INPUT_COMMAND=test \
+  INPUT_REPORTING=github-actions \
+  INPUT_CANCEL_SUPERSEDED=true \
+  GITHUB_REPOSITORY=checkly/playwright-reporter-demo \
+  GITHUB_EVENT_NAME=pull_request \
+  GITHUB_EVENT_PATH="$github_event_path" \
+  run_dry
+)"
+
+assert_not_contains "$cancel_superseded_waiting_output" "Cancel superseded:"
 
 echo "All local action tests passed."

@@ -17,6 +17,8 @@ generated distribution bundle: consumers execute `action.yml` and
   working directory, install command, outputs, summaries, exit codes, and job
   cancellation using local fakes. It must never require Checkly or GitHub
   credentials.
+- `rerun/action.yml` and `scripts/rerun.sh` are the re-run handler sub-action. It validates the `repository_dispatch` event that Checkly sends for a Re-run click and re-runs the job it names.
+- `scripts/test-rerun.sh` covers every validation branch of the re-run handler with a fake `gh`.
 
 ## Product Invariants
 
@@ -45,6 +47,10 @@ generated distribution bundle: consumers execute `action.yml` and
   tested.
 - Never print API keys or other secrets. Sanitize backend-provided values before
   placing them in GitHub workflow commands or summaries.
+- Keep `github-token` out of the environment of the install command and the CLI. Both run project code.
+- Never reference the `job` context in `action.yml`. Whether a composite action can read it is unverified, and an unavailable context fails every caller's step. Callers pass `github-job-id` instead.
+- Cancelling superseded sessions is best effort. It must never fail the step. Every request it makes has a short timeout.
+- The re-run handler reads `repository_dispatch` payload values through `env` only. Never interpolate them into `run:`.
 
 ## Verification
 
@@ -57,6 +63,7 @@ shellcheck scripts/*.sh
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
 ./scripts/test.sh
 ./scripts/test-integration.sh
+./scripts/test-rerun.sh
 ```
 
 CI runs the harness on Linux and macOS, invokes the composite Action itself to

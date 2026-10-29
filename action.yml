@@ -85,6 +85,21 @@ inputs:
   github-sha:
     description: Commit SHA that receives the GitHub Check. Overrides the SHA inferred from the GitHub event.
     required: false
+  github-check-rerun:
+    description: Let the Re-run button on the Checkly GitHub Check re-run this job. Needs github-job-id and a handler workflow that uses checkly/checkly-action/rerun. Applies to detached runs only.
+    required: false
+    default: "false"
+  github-job-id:
+    description: ID of the job that runs this step, from the check_run_id property of the calling workflow's job context. Required when github-check-rerun is true.
+    required: false
+  cancel-superseded:
+    description: On pull request events, cancel the detached Checkly test sessions of earlier commits that still report a GitHub Check with the same name. Needs checks read and pull-requests read on github-token.
+    required: false
+    default: "false"
+  github-token:
+    description: GitHub token used to find superseded Checkly GitHub Checks.
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   test-session-id:
@@ -125,3 +140,7 @@ runs:
         INPUT_REPORTING: ${{ inputs.reporting }}
         INPUT_GITHUB_CHECK_NAME: ${{ inputs.github-check-name }}
         INPUT_GITHUB_SHA: ${{ inputs.github-sha }}
+        INPUT_GITHUB_CHECK_RERUN: ${{ inputs.github-check-rerun }}
+        INPUT_GITHUB_JOB_ID: ${{ inputs.github-job-id }}
+        INPUT_CANCEL_SUPERSEDED: ${{ inputs.cancel-superseded }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}

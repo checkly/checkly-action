@@ -29,10 +29,24 @@ assert_file_contains() {
   fi
 }
 
+assert_file_has_line() {
+  local file="$1"
+  local expected="$2"
+  if ! grep -Fxq -- "$expected" "$file"; then
+    echo "Expected $file to have the line: $expected" >&2
+    echo "Actual contents:" >&2
+    cat "$file" >&2
+    exit 1
+  fi
+}
+
 FAKE_BIN="$TEST_DIR/bin"
 PROJECT_DIR="$TEST_DIR/project"
 READY_FILE="$TEST_DIR/preflight-port"
 REQUEST_FILE="$TEST_DIR/preflight-request.json"
+ROUTES_FILE="$TEST_DIR/api-routes.json"
+API_LOG="$TEST_DIR/api-requests.jsonl"
+ENV_FILE="$TEST_DIR/npx-env"
 ARGS_FILE="$TEST_DIR/npx-args"
 CWD_FILE="$TEST_DIR/npx-cwd"
 INSTALL_MARKER="$TEST_DIR/installed"
@@ -57,13 +71,20 @@ cat > "$FAKE_BIN/npx" <<'FAKE_NPX'
 set -Eeuo pipefail
 printf '%s\n' "$@" > "$FAKE_NPX_ARGS_FILE"
 printf '%s\n' "$PWD" > "$FAKE_NPX_CWD_FILE"
+if [[ -n "${FAKE_NPX_ENV_FILE:-}" ]]; then
+  printf 'CHECKLY_GITHUB_RERUN=%s\nCHECKLY_GITHUB_JOB_ID=%s\nINPUT_GITHUB_TOKEN=%s\n' \
+    "${CHECKLY_GITHUB_RERUN:-}" "${CHECKLY_GITHUB_JOB_ID:-}" "${INPUT_GITHUB_TOKEN:-}" > "$FAKE_NPX_ENV_FILE"
+fi
+if [[ -n "${FAKE_NPX_LOG_FILE:-}" ]]; then
+  printf '{"method":"EXEC","url":"npx"}\n' >> "$FAKE_NPX_LOG_FILE"
+fi
 printf 'Test session ID: test-session-123\n'
 printf 'Open session: https://app.checklyhq.com/accounts/account-1/test-sessions/test-session-123\n'
 exit "${FAKE_NPX_EXIT_CODE:-0}"
 FAKE_NPX
 chmod +x "$FAKE_BIN/npx"
 
-node "$ROOT_DIR/scripts/test-preflight-server.cjs" "$READY_FILE" "$REQUEST_FILE" &
+node "$ROOT_DIR/scripts/test-preflight-server.cjs" "$READY_FILE" "$REQUEST_FILE" "$ROUTES_FILE" "$API_LOG" &
 SERVER_PID="$!"
 
 for _ in $(seq 1 100); do
@@ -315,5 +336,215 @@ $STEP_SCRIPT|SIGTERM|SIGTERM
 $IGNORED_STEP_SCRIPT|SIGINT|SIGINT,SIGTERM
 CASES
 rm -f "$CLI_PID_FILE"
+
+# A pull request whose previous head (BEFORE_SHA) and earlier commits still
+# have detached sessions running under the same GitHub Check name.
+HEAD_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+BEFORE_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+OLDER_SHA=cccccccccccccccccccccccccccccccccccccccc
+OLDEST_SHA=dddddddddddddddddddddddddddddddddddddddd
+CANCELLED_SESSION=11111111-1111-4111-8111-111111111111
+FOREIGN_SESSION=22222222-2222-4222-8222-222222222222
+FAILING_SESSION=33333333-3333-4333-8333-333333333333
+CHECK_RUNS_QUERY="check-runs?check_name=Checkly%20action%20integration&status=in_progress"
+PR_EVENT_FILE="$TEST_DIR/pull-request-event.json"
+CANCEL_OUTPUT="$TEST_DIR/cancel-output"
+
+write_pull_request_event() {
+  cat > "$PR_EVENT_FILE" <<JSON
+{
+  "before": "$BEFORE_SHA",
+  "pull_request": {
+    "number": 7,
+    "commits": $1,
+    "head": {
+      "sha": "$HEAD_SHA",
+      "repo": { "full_name": "checkly/checkly-action" }
+    }
+  }
+}
+JSON
+}
+
+# Extra inputs go through env so each case can add its own.
+run_pull_request_step() {
+  PATH="$FAKE_BIN:$PATH" \
+  CHECKLY_API_URL="http://127.0.0.1:${preflight_port}" \
+  CHECKLY_API_KEY=test-api-key \
+  CHECKLY_ACCOUNT_ID=account-1 \
+  GITHUB_API_URL="http://127.0.0.1:${preflight_port}" \
+  GITHUB_OUTPUT="$OUTPUT_FILE" \
+  GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
+  GITHUB_REPOSITORY=checkly/checkly-action \
+  GITHUB_SHA=ffffffffffffffffffffffffffffffffffffffff \
+  GITHUB_EVENT_NAME=pull_request \
+  GITHUB_EVENT_PATH="$PR_EVENT_FILE" \
+  FAKE_NPX_ARGS_FILE="$ARGS_FILE" \
+  FAKE_NPX_CWD_FILE="$CWD_FILE" \
+  FAKE_NPX_ENV_FILE="$ENV_FILE" \
+  FAKE_NPX_LOG_FILE="$API_LOG" \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.15.0 \
+  INPUT_REPORTING=github-check \
+  INPUT_GITHUB_CHECK_NAME='Checkly action integration' \
+  INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
+  INPUT_CANCEL_SUPERSEDED=true \
+  INPUT_GITHUB_TOKEN=test-github-token \
+  env "$@" "$ROOT_DIR/scripts/run.sh" > "$CANCEL_OUTPUT" 2>&1
+}
+
+write_pull_request_event 4
+cat > "$ROUTES_FILE" <<JSON
+{
+  "GET /repos/checkly/checkly-action/pulls/7/commits?per_page=100&page=1": {
+    "body": [{ "sha": "$OLDEST_SHA" }, { "sha": "$OLDER_SHA" }, { "sha": "$BEFORE_SHA" }, { "sha": "$HEAD_SHA" }]
+  },
+  "GET /repos/checkly/checkly-action/commits/$BEFORE_SHA/$CHECK_RUNS_QUERY": {
+    "body": { "check_runs": [{ "id": 1, "external_id": "$CANCELLED_SESSION" }, { "id": 2, "external_id": "$FAILING_SESSION" }] }
+  },
+  "GET /repos/checkly/checkly-action/commits/$OLDER_SHA/$CHECK_RUNS_QUERY": {
+    "body": { "check_runs": [{ "id": 3, "external_id": "$FOREIGN_SESSION" }, { "id": 4, "external_id": "" }, { "id": 5, "external_id": "../../v1/checks" }, { "id": 6, "external_id": "deployment-42" }, { "id": 7, "external_id": null }] }
+  },
+  "GET /repos/checkly/checkly-action/commits/$OLDEST_SHA/$CHECK_RUNS_QUERY": {
+    "status": 403,
+    "body": { "message": "Resource not accessible by integration" }
+  },
+  "POST /v1/test-sessions/$CANCELLED_SESSION/cancel": { "status": 204 },
+  "POST /v1/test-sessions/$FOREIGN_SESSION/cancel": { "status": 404, "body": { "message": "Test session not found." } },
+  "POST /v1/test-sessions/$FAILING_SESSION/cancel": { "status": 500, "body": { "message": "Internal Server Error" } }
+}
+JSON
+: > "$API_LOG"
+rm -f "$ARGS_FILE" "$ENV_FILE"
+
+run_pull_request_step INPUT_GITHUB_CHECK_RERUN=true INPUT_GITHUB_JOB_ID=123407491960
+
+assert_file_contains "$CANCEL_OUTPUT" "Cancelled superseded Checkly test session ${CANCELLED_SESSION} on commit ${BEFORE_SHA}."
+assert_file_contains "$CANCEL_OUTPUT" "::warning::Could not cancel Checkly test session ${FAILING_SESSION} on commit ${BEFORE_SHA} (HTTP 500)."
+assert_file_contains "$CANCEL_OUTPUT" "::warning::Checkly test session ${FOREIGN_SESSION} on commit ${OLDER_SHA} was not found. It may belong to another Checkly account."
+assert_file_contains "$CANCEL_OUTPUT" "::warning::Could not list the check runs of commit ${OLDEST_SHA} (HTTP 403). The job's token needs the checks: read and pull-requests: read permissions."
+if grep -Fq "test-github-token" "$CANCEL_OUTPUT"; then
+  echo "Expected the GitHub token to stay out of the step output." >&2
+  exit 1
+fi
+assert_file_contains "$ARGS_FILE" "--detach"
+assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_RERUN=repository-dispatch"
+assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_JOB_ID=123407491960"
+assert_file_has_line "$ENV_FILE" "INPUT_GITHUB_TOKEN="
+
+CHECK_RUNS_QUERY="$CHECK_RUNS_QUERY" \
+HEAD_SHA="$HEAD_SHA" \
+BEFORE_SHA="$BEFORE_SHA" \
+OLDER_SHA="$OLDER_SHA" \
+OLDEST_SHA="$OLDEST_SHA" \
+SESSIONS="$CANCELLED_SESSION $FOREIGN_SESSION $FAILING_SESSION" \
+node - "$API_LOG" <<'NODE'
+const fs = require('node:fs')
+const assert = require('node:assert/strict')
+
+const env = process.env
+const requests = fs.readFileSync(process.argv[2], 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+const calls = requests.map((request) => `${request.method} ${request.url}`)
+const checkRunsCall = (sha) => `GET /repos/checkly/checkly-action/commits/${sha}/${env.CHECK_RUNS_QUERY}`
+
+assert.ok(calls.includes('GET /repos/checkly/checkly-action/pulls/7/commits?per_page=100&page=1'))
+for (const sha of [env.BEFORE_SHA, env.OLDER_SHA, env.OLDEST_SHA]) {
+  assert.ok(calls.includes(checkRunsCall(sha)), sha)
+}
+assert.ok(!calls.includes(checkRunsCall(env.HEAD_SHA)))
+
+for (const request of requests.filter((request) => request.url.startsWith('/repos/'))) {
+  assert.equal(request.headers.authorization, 'Bearer test-github-token')
+  assert.equal(request.headers.accept, 'application/vnd.github+json')
+}
+
+const cancels = requests.filter((request) => request.method === 'POST' && !request.url.startsWith('/next/'))
+assert.deepEqual(
+  cancels.map((request) => request.url).sort(),
+  env.SESSIONS.split(' ').map((id) => `/v1/test-sessions/${id}/cancel`).sort(),
+)
+for (const request of cancels) {
+  assert.equal(request.method, 'POST')
+  assert.equal(request.headers.authorization, 'Bearer test-api-key')
+  assert.equal(request.headers['x-checkly-account'], 'account-1')
+  assert.equal(request.headers['x-checkly-operator'], 'github-actions')
+  assert.equal(request.headers['x-checkly-cli-version'], '8.15.0')
+  assert.deepEqual(request.body, {})
+}
+
+assert.equal(calls.at(-1), 'EXEC npx', 'the CLI runs after every cancel request')
+NODE
+
+# A requested re-run without a job ID fails before cancelling or dispatching.
+: > "$API_LOG"
+rm -f "$ARGS_FILE"
+set +e
+run_pull_request_step INPUT_GITHUB_CHECK_RERUN=true
+status="$?"
+set -e
+if [[ "$status" -eq 0 ]]; then
+  echo "Expected a re-run without a job ID to fail." >&2
+  exit 1
+fi
+assert_file_contains "$CANCEL_OUTPUT" "::error::Input 'github-check-rerun' needs the ID of the job that runs this step."
+[[ ! -e "$ARGS_FILE" ]]
+if grep -Fq '"url":"/repos/' "$API_LOG"; then
+  echo "Expected no GitHub API request before the job ID error." >&2
+  exit 1
+fi
+
+# Waiting runs never carry the re-run variables, even when the caller sets them.
+while IFS='|' read -r reporting report_available; do
+  rm -f "$ENV_FILE"
+  PATH="$FAKE_BIN:$PATH" \
+  CHECKLY_GITHUB_RERUN=repository-dispatch \
+  CHECKLY_GITHUB_JOB_ID=1 \
+  CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE="$report_available" \
+  FAKE_NPX_ARGS_FILE="$ARGS_FILE" \
+  FAKE_NPX_CWD_FILE="$CWD_FILE" \
+  FAKE_NPX_ENV_FILE="$ENV_FILE" \
+  INPUT_COMMAND=test \
+  INPUT_CLI_VERSION=8.15.0 \
+  INPUT_REPORTING="$reporting" \
+  INPUT_WORKING_DIRECTORY="$PROJECT_DIR" \
+  INPUT_GITHUB_CHECK_RERUN=true \
+  INPUT_GITHUB_JOB_ID=123407491960 \
+  "$ROOT_DIR/scripts/run.sh" >/dev/null 2>&1
+  assert_file_contains "$ARGS_FILE" "--reporter=github"
+  assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_RERUN="
+  assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_JOB_ID="
+done <<CASES
+github-actions|
+auto|false
+CASES
+
+# A hanging GitHub API delays the run by one bounded request, not more.
+write_pull_request_event 150
+cat > "$ROUTES_FILE" <<JSON
+{
+  "GET /repos/checkly/checkly-action/pulls/7/commits?per_page=100&page=1": {
+    "body": [{ "sha": "$OLDEST_SHA" }]
+  },
+  "GET /repos/checkly/checkly-action/pulls/7/commits?per_page=100&page=2": {
+    "delayMs": 30000,
+    "body": []
+  },
+  "GET /repos/checkly/checkly-action/commits/$BEFORE_SHA/$CHECK_RUNS_QUERY": { "body": { "check_runs": [] } },
+  "GET /repos/checkly/checkly-action/commits/$OLDEST_SHA/$CHECK_RUNS_QUERY": { "body": { "check_runs": [] } }
+}
+JSON
+: > "$API_LOG"
+rm -f "$ARGS_FILE"
+started="$SECONDS"
+run_pull_request_step
+elapsed=$((SECONDS - started))
+if (( elapsed > 15 )); then
+  echo "Expected cancelling to give up within 15 seconds, took ${elapsed}." >&2
+  exit 1
+fi
+assert_file_contains "$CANCEL_OUTPUT" "::warning::Could not list the commits of pull request 7 (timed out)."
+assert_file_contains "$CANCEL_OUTPUT" "No superseded Checkly test sessions to cancel."
+assert_file_contains "$API_LOG" "/repos/checkly/checkly-action/commits/${OLDEST_SHA}/check-runs"
+assert_file_contains "$ARGS_FILE" "--detach"
 
 echo "All integration tests passed."
