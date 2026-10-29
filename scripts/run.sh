@@ -254,6 +254,8 @@ clear_github_report_env() {
   unset CHECKLY_GITHUB_HEAD_REF
   unset CHECKLY_GITHUB_BASE_REF
   unset CHECKLY_GITHUB_SERVER_URL
+  unset CHECKLY_GITHUB_RERUN
+  unset CHECKLY_GITHUB_JOB_ID
 }
 
 configure_generic_repo_env() {
@@ -431,6 +433,164 @@ main()
 NODE
 }
 
+cancel_superseded_sessions() {
+  if [[ -z "$github_token" ]]; then
+    echo "::warning::Input 'github-token' is empty. Superseded Checkly test sessions were not cancelled."
+    return
+  fi
+
+  if ! command -v node >/dev/null 2>&1; then
+    echo "::warning::Node.js is unavailable. Superseded Checkly test sessions were not cancelled."
+    return
+  fi
+
+  CHECKLY_CANCEL_API_URL="$(resolve_checkly_api_url)" \
+  CHECKLY_CANCEL_CLI_VERSION="$cli_version" \
+  CHECKLY_CANCEL_GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}" \
+  CHECKLY_CANCEL_GITHUB_TOKEN="$github_token" \
+  CHECKLY_CANCEL_PULL_REQUEST_REPOSITORY="${GITHUB_REPOSITORY:-}" \
+  CHECKLY_CANCEL_PULL_REQUEST_NUMBER="${CHECKLY_GITHUB_PULL_REQUEST_NUMBER:-}" \
+  CHECKLY_CANCEL_PULL_REQUEST_COMMITS="$(github_event_value "pull_request.commits")" \
+  CHECKLY_CANCEL_CHECK_REPOSITORY="${CHECKLY_GITHUB_REPOSITORY:-}" \
+  CHECKLY_CANCEL_CHECK_NAME="${CHECKLY_GITHUB_CHECK_NAME:-Checkly}" \
+  CHECKLY_CANCEL_BEFORE_SHA="$(github_event_value "before")" \
+  CHECKLY_CANCEL_EXCLUDED_SHAS="$(github_event_value "pull_request.head.sha") ${CHECKLY_GITHUB_SHA:-}" \
+  node <<'NODE'
+const env = process.env
+const shaPattern = /^[0-9a-f]{40}$/
+const sessionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const permissionHint = " The job's token needs the checks: read and pull-requests: read permissions."
+
+// Cancelling is best effort: a slow API must never hold up the run.
+async function request(url, options = {}) {
+  try {
+    const response = await fetch(url, { ...options, signal: AbortSignal.timeout(5_000) })
+    if (!response.ok) {
+      return { ok: false, status: response.status, reason: `HTTP ${response.status}` }
+    }
+    const body = response.status === 204 ? null : await response.json()
+    return { ok: true, status: response.status, body }
+  } catch (error) {
+    return { ok: false, reason: error?.name === 'TimeoutError' ? 'timed out' : 'request failed' }
+  }
+}
+
+function github(path) {
+  return request(`${env.CHECKLY_CANCEL_GITHUB_API_URL}${path}`, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${env.CHECKLY_CANCEL_GITHUB_TOKEN}`,
+      'user-agent': 'checkly-action',
+      'x-github-api-version': '2022-11-28',
+    },
+  })
+}
+
+function cancelSession(sessionId) {
+  return request(`${env.CHECKLY_CANCEL_API_URL}/v1/test-sessions/${sessionId}/cancel`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${env.CHECKLY_API_KEY}`,
+      'content-type': 'application/json',
+      'user-agent': 'checkly-action',
+      'x-checkly-account': env.CHECKLY_ACCOUNT_ID,
+      'x-checkly-source': 'CLI',
+      'x-checkly-operator': 'github-actions',
+      'x-checkly-ci-name': 'GitHub Actions',
+      'x-checkly-cli-version': env.CHECKLY_CANCEL_CLI_VERSION ?? '',
+    },
+    body: '{}',
+  })
+}
+
+function hint(result) {
+  return result.status === 403 || result.status === 404 ? permissionHint : ''
+}
+
+async function main() {
+  const pullRequestRepository = env.CHECKLY_CANCEL_PULL_REQUEST_REPOSITORY
+  const pullRequestNumber = env.CHECKLY_CANCEL_PULL_REQUEST_NUMBER
+  const checkRepository = env.CHECKLY_CANCEL_CHECK_REPOSITORY
+  if (!pullRequestRepository || !/^[0-9]+$/.test(pullRequestNumber ?? '') || !checkRepository) {
+    console.log('::warning::The pull request is unknown. Superseded Checkly test sessions were not cancelled.')
+    return
+  }
+  if (!env.CHECKLY_API_KEY || !env.CHECKLY_ACCOUNT_ID) {
+    console.log('::warning::CHECKLY_API_KEY or CHECKLY_ACCOUNT_ID is missing. Superseded Checkly test sessions were not cancelled.')
+    return
+  }
+
+  const excluded = new Set(env.CHECKLY_CANCEL_EXCLUDED_SHAS.split(/\s+/).filter(Boolean))
+  const candidates = []
+  const addCandidate = (sha) => {
+    if (typeof sha === 'string' && shaPattern.test(sha) && !/^0+$/.test(sha) && !excluded.has(sha) && !candidates.includes(sha)) {
+      candidates.push(sha)
+    }
+  }
+  addCandidate(env.CHECKLY_CANCEL_BEFORE_SHA)
+
+  // The endpoint lists at most 250 commits, oldest first, so the most recent
+  // ones sit on the last page and may spill over from the page before it.
+  const commitCount = Math.min(Number(env.CHECKLY_CANCEL_PULL_REQUEST_COMMITS) || 1, 250)
+  const lastPage = Math.ceil(commitCount / 100)
+  const pages = lastPage > 1 ? [lastPage - 1, lastPage] : [1]
+  const commitPages = await Promise.all(
+    pages.map((page) => github(`/repos/${pullRequestRepository}/pulls/${pullRequestNumber}/commits?per_page=100&page=${page}`)),
+  )
+  const failedPage = commitPages.find((result) => !result.ok)
+  if (failedPage) {
+    console.log(`::warning::Could not list the commits of pull request ${pullRequestNumber} (${failedPage.reason}).${hint(failedPage)}`)
+  }
+  commitPages
+    .filter((result) => result.ok && Array.isArray(result.body))
+    .flatMap((result) => result.body.map((commit) => commit?.sha))
+    .filter((sha) => typeof sha === 'string' && !excluded.has(sha))
+    .slice(-10)
+    .forEach(addCandidate)
+
+  const checkName = encodeURIComponent(env.CHECKLY_CANCEL_CHECK_NAME)
+  const checkRunLists = await Promise.all(
+    candidates.map((sha) => github(`/repos/${checkRepository}/commits/${sha}/check-runs?check_name=${checkName}&status=in_progress`)),
+  )
+  const sessions = []
+  candidates.forEach((sha, index) => {
+    const result = checkRunLists[index]
+    if (!result.ok) {
+      console.log(`::warning::Could not list the check runs of commit ${sha} (${result.reason}).${hint(result)}`)
+      return
+    }
+    for (const checkRun of result.body?.check_runs ?? []) {
+      const sessionId = checkRun?.external_id
+      if (typeof sessionId === 'string' && sessionIdPattern.test(sessionId) && !sessions.some((session) => session.id === sessionId)) {
+        sessions.push({ id: sessionId, sha })
+      }
+    }
+  })
+
+  if (sessions.length === 0) {
+    console.log('No superseded Checkly test sessions to cancel.')
+    return
+  }
+
+  const cancellations = await Promise.all(sessions.map((session) => cancelSession(session.id)))
+  sessions.forEach(({ id, sha }, index) => {
+    const result = cancellations[index]
+    if (result.ok) {
+      console.log(`Cancelled superseded Checkly test session ${id} on commit ${sha}.`)
+    } else if (result.status === 404) {
+      console.log(`::warning::Checkly test session ${id} on commit ${sha} was not found. It may belong to another Checkly account.`)
+    } else {
+      console.log(`::warning::Could not cancel Checkly test session ${id} on commit ${sha} (${result.reason}).`)
+    }
+  })
+}
+
+main().catch(() => {
+  console.log('::warning::Cancelling superseded Checkly test sessions failed.')
+})
+NODE
+}
+
 command_name="$(trim "${INPUT_COMMAND:-test}")"
 requested_cli_version="$(trim "${INPUT_CLI_VERSION:-latest}")"
 cli_version="$requested_cli_version"
@@ -438,6 +598,14 @@ working_directory="$(trim "${INPUT_WORKING_DIRECTORY:-.}")"
 install_command="$(trim "${INPUT_INSTALL_COMMAND:-}")"
 reporting="$(trim "${INPUT_REPORTING:-auto}")"
 github_check_name="$(trim "${INPUT_GITHUB_CHECK_NAME:-}")"
+github_check_rerun="${INPUT_GITHUB_CHECK_RERUN:-false}"
+github_job_id="$(trim "${INPUT_GITHUB_JOB_ID:-}")"
+cancel_superseded="${INPUT_CANCEL_SUPERSEDED:-false}"
+
+# The install command and the CLI run project code. Keep the GitHub token out
+# of their environment.
+github_token="$(trim "${INPUT_GITHUB_TOKEN:-}")"
+unset INPUT_GITHUB_TOKEN
 
 case "$command_name" in
   test|trigger) ;;
@@ -490,6 +658,11 @@ if [[ "$command_name" == "test" && -n "$(trim "${INPUT_FAIL_ON_NO_MATCHING:-}")"
   exit 1
 fi
 
+if [[ -n "$github_job_id" && ! "$github_job_id" =~ ^[0-9]+$ ]]; then
+  echo "::error::Input 'github-job-id' must be a numeric job ID, got '${github_job_id}'." >&2
+  exit 1
+fi
+
 # Resolve the repository/sha once; both the generic repo env and the GitHub
 # report env derive from the same values.
 github_repository="$(resolve_github_repository)"
@@ -533,6 +706,9 @@ github_reporter_run=true
 
 if [[ "$reporting" == "github-actions" ]]; then
   clear_github_report_env
+  if truthy "$github_check_rerun"; then
+    echo "::warning::Input 'github-check-rerun' is ignored with reporting: github-actions. Re-run applies only to detached runs that report through a Checkly GitHub Check."
+  fi
 else
   github_check_requested=true
   configure_github_report "$github_repository" "$github_sha" "$github_check_name"
@@ -551,6 +727,20 @@ else
       echo "::warning::Checkly GitHub Check reporting is unavailable (${github_report_reason}). Reporting through GitHub Actions instead, so this job waits for the Checkly test session result. Install the Checkly GitHub App on this repository to run detached and receive a Checkly GitHub Check: ${CHECKLY_GITHUB_INTEGRATION_URL}"
     fi
   fi
+fi
+
+if [[ "$detach_run" == "true" ]] && truthy "$github_check_rerun"; then
+  if [[ -z "$github_job_id" ]]; then
+    echo "::error::Input 'github-check-rerun' needs the ID of the job that runs this step. Set github-job-id: \${{ job.check_run_id }}." >&2
+    exit 1
+  fi
+  export CHECKLY_GITHUB_RERUN=repository-dispatch
+  export CHECKLY_GITHUB_JOB_ID="$github_job_id"
+fi
+
+cancel_superseded_run=false
+if [[ "$detach_run" == "true" ]] && truthy "$cancel_superseded" && is_pull_request_event; then
+  cancel_superseded_run=true
 fi
 
 checkly_command=("${checkly_executable[@]}" "$command_name")
@@ -611,12 +801,22 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" == "1" || "${CHECKLY_ACTION_DRY_RUN:-}" == "
       printf ' environmentUrl=%s' "$CHECKLY_GITHUB_ENVIRONMENT_URL"
     fi
     printf '\n'
+    if [[ -n "${CHECKLY_GITHUB_RERUN:-}" ]]; then
+      printf 'Re-run: repository_dispatch (job %s)\n' "${CHECKLY_GITHUB_JOB_ID:-}"
+    fi
+    if [[ "$cancel_superseded_run" == "true" ]]; then
+      printf 'Cancel superseded: pull request %s\n' "${CHECKLY_GITHUB_PULL_REQUEST_NUMBER:-}"
+    fi
   elif [[ "$github_check_requested" == "true" ]]; then
     printf 'Reporting: GitHub Actions (GitHub Check unavailable: %s)\n' "$github_report_reason"
   else
     printf 'Reporting: GitHub Actions\n'
   fi
   exit 0
+fi
+
+if [[ "$cancel_superseded_run" == "true" ]]; then
+  cancel_superseded_sessions || echo "::warning::Cancelling superseded Checkly test sessions failed."
 fi
 
 output_dir="$(mktemp -d)"

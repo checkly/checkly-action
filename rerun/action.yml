@@ -1,0 +1,32 @@
+name: Checkly GitHub Check re-run
+description: Re-run the GitHub Actions job behind a Checkly GitHub Check when someone clicks Re-run on that check.
+author: Checkly
+
+inputs:
+  github-token:
+    description: GitHub token that re-runs the job. It needs the actions write permission.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  run-url:
+    description: URL of the workflow run whose job was re-run.
+    value: ${{ steps.rerun.outputs.run-url }}
+  job-id:
+    description: ID of the job that was re-run, from the run's latest attempt.
+    value: ${{ steps.rerun.outputs.job-id }}
+
+runs:
+  using: composite
+  steps:
+    - id: rerun
+      shell: bash
+      run: exec "${{ github.action_path }}/../scripts/rerun.sh"
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CHECKLY_RERUN_EVENT_TYPE: ${{ github.event.action }}
+        CHECKLY_RERUN_VERSION: ${{ github.event.client_payload.version }}
+        CHECKLY_RERUN_REPOSITORY: ${{ github.event.client_payload.repository }}
+        CHECKLY_RERUN_SHA: ${{ github.event.client_payload.sha }}
+        CHECKLY_RERUN_RUN_ID: ${{ github.event.client_payload.run_id }}
+        CHECKLY_RERUN_JOB_ID: ${{ github.event.client_payload.job_id }}

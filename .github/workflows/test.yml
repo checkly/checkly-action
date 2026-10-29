@@ -52,6 +52,9 @@ jobs:
       - name: Run integration tests
         run: ./scripts/test-integration.sh
 
+      - name: Run re-run handler tests
+        run: ./scripts/test-rerun.sh
+
   composite-action:
     name: Composite action contract
     runs-on: ubuntu-latest
@@ -69,6 +72,8 @@ jobs:
           reporting: github-check
           github-check-name: Checkly action contract
           github-sha: 0123456789abcdef0123456789abcdef01234567
+          github-check-rerun: true
+          github-job-id: "123407491960"
           tags: smoke
 
   ci:
