@@ -86,7 +86,7 @@ inputs:
     description: Commit SHA that receives the GitHub Check. Overrides the SHA inferred from the GitHub event.
     required: false
   github-check-rerun:
-    description: Let the Re-run button on the Checkly GitHub Check re-run this job. Needs github-job-id and a handler workflow that uses checkly/checkly-action/rerun. Applies to detached runs only.
+    description: Let the Re-run button on the Checkly GitHub Check re-run this job. Needs github-job-id, Checkly CLI 10.1.0 or newer, and a handler workflow that uses checkly/checkly-action/rerun. Applies to detached runs only.
     required: false
     default: "false"
   github-job-id:

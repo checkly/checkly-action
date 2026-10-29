@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 
 CHECKLY_GITHUB_INTEGRATION_URL="https://app.checklyhq.com/settings/account/integrations"
+MINIMUM_CLI_VERSION=8.15.0
+# Older CLIs drop CHECKLY_GITHUB_RERUN and CHECKLY_GITHUB_JOB_ID without an error.
+MINIMUM_RERUN_CLI_VERSION=10.1.0
 
 trim() {
   local value="$1"
@@ -81,23 +84,35 @@ add_positional_from_lines() {
   done <<< "$values"
 }
 
-cli_version_is_supported() {
+cli_version_is_at_least() {
   local version
   version="$(trim "${1:-}")"
+  local minimum="$2"
 
-  # Only exact pinned stable semver is comparable against the 8.15.0 floor.
+  # Only exact pinned stable semver is comparable against a minimum.
   # Dist-tags, ranges, canaries, and prereleases pass because they may point
   # at compatible builds before a stable release exists.
-  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-    local major="${BASH_REMATCH[1]}"
-    local minor="${BASH_REMATCH[2]}"
+  if [[ "$version" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    local found=("${BASH_REMATCH[@]:1}")
+    local required
+    IFS=. read -r -a required <<< "$minimum"
 
-    if (( major < 8 || (major == 8 && minor < 15) )); then
-      return 1
-    fi
+    local index
+    for index in 0 1 2; do
+      if (( 10#${found[index]} < 10#${required[index]} )); then
+        return 1
+      fi
+      if (( 10#${found[index]} > 10#${required[index]} )); then
+        return 0
+      fi
+    done
   fi
 
   return 0
+}
+
+cli_version_is_supported() {
+  cli_version_is_at_least "${1:-}" "$MINIMUM_CLI_VERSION"
 }
 
 cli_version_matches_requested() {
@@ -624,7 +639,7 @@ case "$reporting" in
 esac
 
 if ! cli_version_is_supported "$requested_cli_version"; then
-  echo "::error::The Checkly Action needs Checkly CLI 8.15.0 or newer (cli-version is '${requested_cli_version}'). Use cli-version: latest or >= 8.15.0." >&2
+  echo "::error::The Checkly Action needs Checkly CLI ${MINIMUM_CLI_VERSION} or newer (cli-version is '${requested_cli_version}'). Use cli-version: latest or >= ${MINIMUM_CLI_VERSION}." >&2
   exit 1
 fi
 
@@ -672,6 +687,7 @@ configure_generic_repo_env "$github_repository" "$github_sha"
 configure_deployment_environment_url
 
 checkly_executable=(npx --yes "checkly@${cli_version}")
+local_cli_version=""
 
 if [[ "${CHECKLY_ACTION_DRY_RUN:-}" != "1" && "${CHECKLY_ACTION_DRY_RUN:-}" != "true" ]]; then
   cd "$working_directory"
@@ -684,7 +700,7 @@ if [[ "${CHECKLY_ACTION_DRY_RUN:-}" != "1" && "${CHECKLY_ACTION_DRY_RUN:-}" != "
   local_cli_version="$(resolve_local_checkly_version "$PWD")"
   if [[ -n "$local_cli_version" ]]; then
     if ! cli_version_is_supported "$local_cli_version"; then
-      echo "::error::Project-local Checkly CLI ${local_cli_version} is older than the required 8.15.0. Update the project's checkly dependency before using this Action." >&2
+      echo "::error::Project-local Checkly CLI ${local_cli_version} is older than the required ${MINIMUM_CLI_VERSION}. Update the project's checkly dependency before using this Action." >&2
       exit 1
     fi
 
@@ -732,6 +748,14 @@ fi
 if [[ "$detach_run" == "true" ]] && truthy "$github_check_rerun"; then
   if [[ -z "$github_job_id" ]]; then
     echo "::error::Input 'github-check-rerun' needs the ID of the job that runs this step. Set github-job-id: \${{ job.check_run_id }}." >&2
+    exit 1
+  fi
+  if ! cli_version_is_at_least "$cli_version" "$MINIMUM_RERUN_CLI_VERSION"; then
+    if [[ -n "$local_cli_version" ]]; then
+      echo "::error::Input 'github-check-rerun' needs Checkly CLI ${MINIMUM_RERUN_CLI_VERSION} or newer. The project-local Checkly CLI is ${local_cli_version}. Update the project's checkly dependency to ${MINIMUM_RERUN_CLI_VERSION} or newer." >&2
+    else
+      echo "::error::Input 'github-check-rerun' needs Checkly CLI ${MINIMUM_RERUN_CLI_VERSION} or newer. The cli-version input is '${requested_cli_version}'. Use cli-version: latest or >= ${MINIMUM_RERUN_CLI_VERSION}." >&2
+    fi
     exit 1
   fi
   export CHECKLY_GITHUB_RERUN=repository-dispatch
