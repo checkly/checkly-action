@@ -56,15 +56,19 @@ SUMMARY_FILE="$TEST_DIR/github-summary"
 mkdir -p "$FAKE_BIN" "$PROJECT_DIR/node_modules/checkly"
 touch "$OUTPUT_FILE" "$SUMMARY_FILE"
 
-cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
+write_local_checkly() {
+  cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<JSON
 {
   "name": "checkly",
-  "version": "8.15.0",
+  "version": "$1",
   "exports": {
     ".": "./dist/index.js"
   }
 }
 JSON
+}
+
+write_local_checkly 8.15.0
 
 cat > "$FAKE_BIN/npx" <<'FAKE_NPX'
 #!/usr/bin/env bash
@@ -170,15 +174,7 @@ assert.equal(request.body.job, 'integration')
 assert.equal(request.body.eventName, 'push')
 NODE
 
-cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
-{
-  "name": "checkly",
-  "version": "8.14.1",
-  "exports": {
-    ".": "./dist/index.js"
-  }
-}
-JSON
+write_local_checkly 8.14.1
 
 set +e
 incompatible_local_cli_output="$(
@@ -198,15 +194,7 @@ if [[ "$status" -eq 0 ]]; then
 fi
 assert_file_contains <(printf '%s\n' "$incompatible_local_cli_output") "Project-local Checkly CLI 8.14.1 is older than the required 8.15.0"
 
-cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
-{
-  "name": "checkly",
-  "version": "8.16.0",
-  "exports": {
-    ".": "./dist/index.js"
-  }
-}
-JSON
+write_local_checkly 8.16.0
 
 set +e
 mismatched_local_cli_output="$(
@@ -226,15 +214,7 @@ if [[ "$status" -eq 0 ]]; then
 fi
 assert_file_contains <(printf '%s\n' "$mismatched_local_cli_output") "Project-local Checkly CLI 8.16.0 does not match cli-version '8.15.0'"
 
-cat > "$PROJECT_DIR/node_modules/checkly/package.json" <<'JSON'
-{
-  "name": "checkly",
-  "version": "8.15.0",
-  "exports": {
-    ".": "./dist/index.js"
-  }
-}
-JSON
+write_local_checkly 8.15.0
 
 set +e
 PATH="$FAKE_BIN:$PATH" \
@@ -417,7 +397,8 @@ JSON
 : > "$API_LOG"
 rm -f "$ARGS_FILE" "$ENV_FILE"
 
-run_pull_request_step INPUT_GITHUB_CHECK_RERUN=true INPUT_GITHUB_JOB_ID=123407491960
+write_local_checkly 10.1.0
+run_pull_request_step INPUT_CLI_VERSION=10.1.0 INPUT_GITHUB_CHECK_RERUN=true INPUT_GITHUB_JOB_ID=123407491960
 
 assert_file_contains "$CANCEL_OUTPUT" "Cancelled superseded Checkly test session ${CANCELLED_SESSION} on commit ${BEFORE_SHA}."
 assert_file_contains "$CANCEL_OUTPUT" "::warning::Could not cancel Checkly test session ${FAILING_SESSION} on commit ${BEFORE_SHA} (HTTP 500)."
@@ -468,7 +449,7 @@ for (const request of cancels) {
   assert.equal(request.headers.authorization, 'Bearer test-api-key')
   assert.equal(request.headers['x-checkly-account'], 'account-1')
   assert.equal(request.headers['x-checkly-operator'], 'github-actions')
-  assert.equal(request.headers['x-checkly-cli-version'], '8.15.0')
+  assert.equal(request.headers['x-checkly-cli-version'], '10.1.0')
   assert.deepEqual(request.body, {})
 }
 
@@ -476,6 +457,7 @@ assert.equal(calls.at(-1), 'EXEC npx', 'the CLI runs after every cancel request'
 NODE
 
 # A requested re-run without a job ID fails before cancelling or dispatching.
+write_local_checkly 8.15.0
 : > "$API_LOG"
 rm -f "$ARGS_FILE"
 set +e
@@ -493,7 +475,37 @@ if grep -Fq '"url":"/repos/' "$API_LOG"; then
   exit 1
 fi
 
+# A project-local CLI older than the Re-run minimum fails before cancelling or dispatching.
+write_local_checkly 10.0.0
+: > "$API_LOG"
+rm -f "$ARGS_FILE"
+set +e
+run_pull_request_step INPUT_CLI_VERSION=latest INPUT_GITHUB_CHECK_RERUN=true INPUT_GITHUB_JOB_ID=123407491960
+status="$?"
+set -e
+if [[ "$status" -eq 0 ]]; then
+  echo "Expected a re-run with project-local Checkly CLI 10.0.0 to fail." >&2
+  exit 1
+fi
+assert_file_contains "$CANCEL_OUTPUT" "::error::Input 'github-check-rerun' needs Checkly CLI 10.1.0 or newer. The project-local Checkly CLI is 10.0.0. Update the project's checkly dependency to 10.1.0 or newer."
+[[ ! -e "$ARGS_FILE" ]]
+if grep -Eq '"url":"/(repos|v1)/' "$API_LOG"; then
+  echo "Expected no GitHub API or cancel request before the Checkly CLI version error." >&2
+  exit 1
+fi
+
+# A project-local prerelease may be a compatible build.
+write_local_checkly 10.1.0-beta.1
+: > "$API_LOG"
+rm -f "$ARGS_FILE" "$ENV_FILE"
+run_pull_request_step INPUT_CLI_VERSION=latest INPUT_GITHUB_CHECK_RERUN=true INPUT_GITHUB_JOB_ID=123407491960
+assert_file_contains "$ARGS_FILE" "--detach"
+assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_RERUN=repository-dispatch"
+assert_file_has_line "$ENV_FILE" "CHECKLY_GITHUB_JOB_ID=123407491960"
+
 # Waiting runs never carry the re-run variables, even when the caller sets them.
+# They skip the Re-run minimum, so the project-local CLI 8.15.0 runs.
+write_local_checkly 8.15.0
 while IFS='|' read -r reporting report_available; do
   rm -f "$ENV_FILE"
   PATH="$FAKE_BIN:$PATH" \

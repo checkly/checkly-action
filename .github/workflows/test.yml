@@ -68,7 +68,7 @@ jobs:
           CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE: "true"
         with:
           command: test
-          cli-version: 8.15.0
+          cli-version: 10.1.0
           reporting: github-check
           github-check-name: Checkly action contract
           github-sha: 0123456789abcdef0123456789abcdef01234567

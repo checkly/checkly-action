@@ -39,6 +39,7 @@ generated distribution bundle: consumers execute `action.yml` and
 - Exact stable semver pins are compared against the minimum version. Dist-tags,
   ranges, canaries, and prereleases are allowed because they may identify a
   compatible build before the next stable release.
+- `github-check-rerun` requires Checkly CLI `10.1.0` or newer. Older CLIs drop `CHECKLY_GITHUB_RERUN` and `CHECKLY_GITHUB_JOB_ID` silently. A detached run with Re-run on must fail before any cancel request or CLI start when the resolved CLI (the project-local install, else `cli-version`) is an exact stable version below it. The exact-pin rules above apply. Runs that wait in the job and runs with Re-run off skip this minimum.
 - Repository and SHA values sent by the Action are hints, not authorization.
   The Checkly backend must continue verifying account-scoped GitHub App access.
 - `github-sha` explicitly overrides event-derived SHA metadata for dispatch and

@@ -280,6 +280,48 @@ rerun_disabled_output="$(
 
 assert_not_contains "$rerun_disabled_output" "Re-run:"
 
+for cli_version in 8.15.0 9.20.0 10.0.9 v10.0.0; do
+  assert_fails_with "::error::Input 'github-check-rerun' needs Checkly CLI 10.1.0 or newer. The cli-version input is '${cli_version}'. Use cli-version: latest or >= 10.1.0." env \
+    INPUT_COMMAND=test \
+    INPUT_CLI_VERSION="$cli_version" \
+    INPUT_GITHUB_CHECK_RERUN=true \
+    INPUT_GITHUB_JOB_ID=123407491960 \
+    CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+    CHECKLY_ACTION_DRY_RUN=1 \
+    "$ROOT_DIR/scripts/run.sh"
+done
+
+for cli_version in 10.1.0 v10.1.0 10.1.1 10.2.0 11.0.0 latest '^10.0.0' 0.0.0-canary.58c867e 10.0.0-beta.1; do
+  rerun_cli_version_output="$(
+    INPUT_COMMAND=test \
+    INPUT_CLI_VERSION="$cli_version" \
+    INPUT_GITHUB_CHECK_RERUN=true \
+    INPUT_GITHUB_JOB_ID=123407491960 \
+    CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE=true \
+    run_dry
+  )"
+  assert_contains "$rerun_cli_version_output" "Re-run: repository_dispatch (job 123407491960)"
+done
+
+# The Re-run minimum applies only when Re-run is on and the run detaches.
+while IFS='|' read -r rerun reporting report_available expected_command; do
+  rerun_old_cli_output="$(
+    INPUT_COMMAND=test \
+    INPUT_CLI_VERSION=8.15.0 \
+    INPUT_REPORTING="$reporting" \
+    INPUT_GITHUB_CHECK_RERUN="$rerun" \
+    INPUT_GITHUB_JOB_ID=123407491960 \
+    CHECKLY_ACTION_GITHUB_REPORT_AVAILABLE="$report_available" \
+    run_dry
+  )"
+  assert_contains "$rerun_old_cli_output" "$expected_command"
+  assert_not_contains "$rerun_old_cli_output" "Re-run:"
+done <<CASES
+false|github-check|true|checkly@8.15.0 test --detach
+true|auto|false|checkly@8.15.0 test --reporter=github
+true|github-actions||checkly@8.15.0 test --reporter=github
+CASES
+
 cancel_superseded_output="$(
   INPUT_COMMAND=test \
   INPUT_CANCEL_SUPERSEDED=true \

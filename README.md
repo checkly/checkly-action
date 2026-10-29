@@ -143,7 +143,9 @@ with that commit and selects where the GitHub Check is reported.
 
 A detached run reports through a Checkly GitHub Check. The Re-run button on that check therefore goes to Checkly. Set `github-check-rerun: true` to make that button re-run the GitHub Actions job that started the test session. GitHub re-runs the job and the jobs that depend on it as a new attempt of the same workflow run. The new attempt uses the same commit, the same workflow file and the privileges of the actor who started the original run. The re-run job starts a new test session. That session reports a new check with the same name on the same commit.
 
-Pass the ID of the job with `github-job-id: ${{ job.check_run_id }}`. The `job.check_run_id` property is not available on GitHub Enterprise Server. When the run detaches and `github-job-id` is empty, the step fails before it runs any checks. With `reporting: github-actions`, the action ignores `github-check-rerun` and logs a warning. A run that falls back to waiting in the job ignores it as well. Re-run also needs a Checkly CLI version that sends the job ID to Checkly.
+Pass the ID of the job with `github-job-id: ${{ job.check_run_id }}`. The `job.check_run_id` property is not available on GitHub Enterprise Server. When the run detaches and `github-job-id` is empty, the step fails before it runs any checks. With `reporting: github-actions`, the action ignores `github-check-rerun` and logs a warning. A run that falls back to waiting in the job ignores it as well.
+
+Re-run needs Checkly CLI `10.1.0` or newer. Older versions do not send the job ID to Checkly. When the run detaches with an older CLI, the step fails before it runs any checks. Raise the project's `checkly` dependency or the `cli-version` input to `10.1.0` or newer. Dist-tags such as `latest`, ranges, canaries, and prereleases pass this check.
 
 ```yaml
 jobs:
@@ -263,7 +265,7 @@ jobs:
 | `reporting` | Where to report the Checkly result: `auto`, `github-check`, or `github-actions`. Defaults to `auto`. |
 | `github-check-name` | GitHub Check name used when reporting through the Checkly GitHub App. Defaults to `Checkly`. |
 | `github-sha` | Commit associated with the test session and targeted by the GitHub Check. Overrides the pull request head SHA or `GITHUB_SHA`. |
-| `github-check-rerun` | Let the Re-run button on the Checkly GitHub Check re-run this job. Needs `github-job-id` and a [handler workflow](#re-run-a-detached-check). Applies to detached runs only. Defaults to `false`. |
+| `github-check-rerun` | Let the Re-run button on the Checkly GitHub Check re-run this job. Needs `github-job-id`, Checkly CLI `10.1.0` or newer, and a [handler workflow](#re-run-a-detached-check). Applies to detached runs only. Defaults to `false`. |
 | `github-job-id` | ID of the job that runs this step. Set it to `${{ job.check_run_id }}`. Required when `github-check-rerun` is `true`. |
 | `cancel-superseded` | On pull request events, cancel the detached test sessions of earlier commits that still report a GitHub Check with the same name. Defaults to `false`. |
 | `github-token` | Token used to find superseded GitHub Checks. Needs `checks: read` and `pull-requests: read`. Defaults to `${{ github.token }}`. |
